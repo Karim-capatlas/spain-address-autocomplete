@@ -205,4 +205,58 @@ describe('searchAddresses', () => {
     expect(rec.lat).toBeUndefined()
     expect(rec.lon).toBeUndefined()
   })
+
+  test('requests highlights and captures snippets when options.highlight is true', async () => {
+    const captured: { params?: Record<string, string | number | boolean | undefined> } = {}
+    const response: TypesenseSearchResponse = {
+      found: 1,
+      hits: [
+        {
+          document: makeDoc({ id: 'h1' }),
+          highlights: [
+            { field: 'via_nombre_completo', snippet: '<mark>Calle</mark> Mayor', matches: 1 },
+          ],
+        },
+      ],
+    }
+    const result = await searchAddresses(
+      { query: 'calle', highlight: true },
+      { client: fakeClient(response, captured) },
+    )
+    expect(captured.params?.highlight).toBe(true)
+    expect(captured.params?.highlight_full).toBe(true)
+    expect(result.records[0].highlights).toEqual([
+      { field: 'via_nombre_completo', snippet: '<mark>Calle</mark> Mayor', matches: 1 },
+    ])
+  })
+
+  test('propagates highlights into grouped items', async () => {
+    const response: TypesenseSearchResponse = {
+      found: 1,
+      found_docs: 1,
+      grouped_hits: [
+        {
+          group_key: ['28079'],
+          found: 1,
+          hits: [
+            {
+              document: makeDoc({ id: 'g1' }),
+              highlights: [{ field: 'via_nombre', snippet: '<mark>Calle</mark>', matches: 1 }],
+            },
+          ],
+        },
+      ],
+    }
+    const result = await searchAddresses({ query: 'x', highlight: true }, { client: fakeClient(response) })
+    expect(result.groups[0].items[0].highlights).toHaveLength(1)
+    expect(result.groups[0].items[0].highlights?.[0].field).toBe('via_nombre')
+    expect(result.groups[0].items[0].highlights?.[0].snippet).toBe('<mark>Calle</mark>')
+  })
+
+  test('does not request highlights by default (opt-in)', async () => {
+    const captured: { params?: Record<string, string | number | boolean | undefined> } = {}
+    await searchAddresses({ query: 'x' }, { client: fakeClient({ found: 0, hits: [] }, captured) })
+    expect(captured.params?.highlight).toBeUndefined()
+    expect(captured.params?.highlight_full).toBeUndefined()
+  })
 })

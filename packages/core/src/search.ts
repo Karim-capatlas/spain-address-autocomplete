@@ -7,7 +7,7 @@
  */
 
 import type { TypesenseClient, TypesenseSearchResponse } from './typesense.js'
-import type { AddressRecord, SearchGroup, SearchOptions, SearchResult } from './types.js'
+import type { AddressRecord, Highlight, SearchGroup, SearchOptions, SearchResult } from './types.js'
 
 // Mirrors the schema in packages/typesense/src/schema.ts (the indexed fields
 // must match what `typesense:import` writes).
@@ -25,7 +25,7 @@ export const SEARCH_GROUP_LIMIT = 3
 function extractGroups(response: TypesenseSearchResponse): SearchGroup[] {
   if (!response.grouped_hits) return []
   return response.grouped_hits.map((group) => {
-    const items = group.hits.map((hit) => toAddressRecord(hit.document))
+    const items = group.hits.map((hit) => toAddressRecord(hit.document, hit.highlights))
     const first = items[0] ?? ({} as AddressRecord)
     return {
       municipio_id: String(group.group_key?.[0] ?? first.municipio_id ?? ''),
@@ -49,7 +49,7 @@ export interface SearchDependencies {
  * `AddressRecord`. Typesense returns every value as a string; we pass them
  * through unchanged — consumers coerce `lat`/`lon` lazily if needed.
  */
-function toAddressRecord(doc: Record<string, unknown>): AddressRecord {
+function toAddressRecord(doc: Record<string, unknown>, highlights?: Highlight[]): AddressRecord {
   const id = String(doc.id ?? '')
   return {
     id,
@@ -66,6 +66,7 @@ function toAddressRecord(doc: Record<string, unknown>): AddressRecord {
     label: String(doc.label ?? ''),
     lat: doc.lat != null ? Number(doc.lat) : undefined,
     lon: doc.lon != null ? Number(doc.lon) : undefined,
+    highlights,
   }
 }
 
@@ -94,12 +95,12 @@ function extractRecords(response: TypesenseSearchResponse): AddressRecord[] {
   if (response.grouped_hits) {
     for (const group of response.grouped_hits) {
       for (const hit of group.hits) {
-        records.push(toAddressRecord(hit.document))
+        records.push(toAddressRecord(hit.document, hit.highlights))
       }
     }
   } else {
     for (const hit of response.hits ?? []) {
-      records.push(toAddressRecord(hit.document))
+      records.push(toAddressRecord(hit.document, hit.highlights))
     }
   }
   return records
@@ -121,6 +122,10 @@ export async function searchAddresses(
     prefix: true,
     num_typos: 1,
     filter_by: buildFilter(options),
+    // §3.1.7: opt-in matched-token highlighting. The live Typesense server returns
+    // `<mark>`-wrapped snippets by default (it ignores a custom `highlight_affix`),
+    // so the widget renders the default markup directly.
+    ...(options.highlight ? { highlight: true, highlight_full: true } : {}),
   }
 
   const start = Date.now()

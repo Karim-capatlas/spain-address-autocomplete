@@ -20,6 +20,17 @@ export interface AddressRecord {
   label: string // "Calle Gran Vía, Madrid (28013)"
   lat?: number // optional, from CartoCiudad or INE geopoint
   lon?: number
+  /** Typesense highlight snippets for this hit (present only when the `highlight`
+   *  SearchOption was requested). Each entry wraps a matched field's matched
+   *  tokens in `<mark>…</mark>`, e.g. `"<mark>Calle</mark> Mayor"`. */
+  highlights?: Highlight[]
+}
+
+/** A Typesense highlight entry: a field's text with `<mark>`-wrapped matched tokens. */
+export interface Highlight {
+  field: string
+  snippet: string
+  matches: number
 }
 
 export interface SearchOptions {
@@ -30,6 +41,9 @@ export interface SearchOptions {
   filterByCP?: string
   /** Max streets returned per municipio group (forwarded to Typesense `group_limit`). */
   groupLimit?: number
+  /** Request Typesense highlights (`highlight:true` + `highlight_full:true`) so
+   *  matched tokens are wrapped in `<mark>` snippets on each hit (§3.1.7). */
+  highlight?: boolean
 }
 
 /** A municipio group from a `group_by=municipio_id` search. */
@@ -58,7 +72,7 @@ export interface SearchResult {
 /** Raw hit shape returned by the Typesense `/documents/search` REST endpoint. */
 export interface SearchHit {
   document: Record<string, unknown>
-  highlights?: Array<{ field: string; snippet: string; matches: number }>
+  highlights?: Highlight[]
   text_match?: number
 }
 

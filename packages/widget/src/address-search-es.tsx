@@ -126,6 +126,8 @@ export class AddressSearchEs {
           filterByCP: cp ? q : undefined,
           filterByProvincia: this.scopeProvincia || undefined,
           filterByMunicipio: this.scopeMunicipalidad(),
+          // §3.1.7: bold matched tokens inside the result label.
+          highlight: true,
         },
         { client },
       )
@@ -404,6 +406,25 @@ export class AddressSearchEs {
     )
   }
 
+  /** §3.1.7: render `via_nombre_completo` with Typesense's `<mark>`-wrapped matched
+   *  tokens bolded (e.g. "Travesía `<mark>Calle</mark> <mark>Mayor</mark>`").
+   *  Falls back to the plain name when no highlights are present on the hit. */
+  private renderHighlighted(item: AddressRecord): (string | JSX.Element)[] {
+    const snippet = item.highlights?.find((h) => h.field === 'via_nombre_completo')?.snippet
+    if (!snippet) return [item.via_nombre_completo]
+    const parts: (string | JSX.Element)[] = []
+    const re = /<mark>(.*?)<\/mark>/g
+    let last = 0
+    let m: RegExpExecArray | null
+    while ((m = re.exec(snippet)) !== null) {
+      if (m.index > last) parts.push(snippet.slice(last, m.index))
+      parts.push(<mark>{m[1] ?? ''}</mark>)
+      last = m.index + m[0].length
+    }
+    if (last < snippet.length) parts.push(snippet.slice(last))
+    return parts
+  }
+
   private renderGroups() {
     return this.groups.map((g, gi) => {
       const collapsed = this.collapsed.has(g.municipio_id)
@@ -453,7 +474,7 @@ export class AddressSearchEs {
                   }
                   onClick={() => this.selectItem(it)}
                 >
-                  <span class="aes-label">{it.via_nombre_completo}</span>
+                  <span class="aes-label">{this.renderHighlighted(it)}</span>
                   <span class="aes-sub">
                     {it.municipio}, {it.provincia} · {it.codigo_postal}
                   </span>
