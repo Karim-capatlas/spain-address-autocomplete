@@ -1,0 +1,12 @@
+{
+  "source_date": "2026-01",
+  "record_count": 37324,
+  "provinces_covered": [
+    "28"
+  ],
+  "generated_at": "2026-08-20T15:04:52.642Z",
+  "file_size_bytes": 13364419,
+  "gzip_size_bytes": 1127107,
+  "data_source": "INE Callejero del Censo Electoral",
+  "attribution": "© Instituto Nacional de Estadística (INE) — https://www.ine.es/dyngs/DAB/es/index.htm?cid=1390"
+}

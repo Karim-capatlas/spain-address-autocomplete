@@ -1,0 +1,16 @@
+# Lefthook hooks — https://lefthook.dev
+# Install with: lefthook install
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: typecheck
+      run: pnpm typecheck
+    - name: lint
+      run: pnpm lint
+      glob: "*.{js,ts,jsx,tsx,json}"
+
+pre-push:
+  jobs:
+    - name: test
+      run: pnpm test

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft-007/schema",
+  "compilerOptions": {
+    "target": "es2018",
+    "lib": ["dom", "dom.iterable", "es2018"],
+    /* Stencil compiles JSX via its own compiler; these settings exist for
+       editor/IDE support only — `stencil build` does its own transpilation. */
+    "jsx": "react",
+    "jsxFactory": "h",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "skipLibCheck": true,
+    "types": ["@stencil/core"]
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

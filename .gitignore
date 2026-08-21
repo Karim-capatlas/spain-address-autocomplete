@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.build/
+.turbo/
+# Stencil caches + generated types
+.stencil/
+packages/widget/src/components.d.ts
+packages/widget/.stencil/
+
+# ETL raw data (downloaded from INE)
+packages/etl/data/
+packages/data/raw/
+*.zip
+*.jsonl
+*.jsonl.gz
+
+# Environment files
+.env
+.env.local
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/

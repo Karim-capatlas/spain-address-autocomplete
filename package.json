@@ -1,0 +1,41 @@
+{
+  "name": "spain-address-autocomplete",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build --filter=@spain-address/*",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "turbo run lint --filter=@spain-address/*",
+    "typecheck": "turbo run typecheck --filter=@spain-address/*",
+    "dev": "turbo run dev --parallel --filter=@spain-address/*",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "etl": "pnpm --filter etl run start",
+    "typesense:import": "pnpm --filter @spain-address/typesense run import"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/adm-zip": "^0.5.8",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^10.1.0",
+    "eslint-plugin-import": "^2.29.0",
+    "eslint-plugin-unicorn": "^55.0.0",
+    "lefthook": "^1.8.0",
+    "prettier": "^3.3.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.58.0",
+    "vitest": "^2.0.0",
+    "@vitest/coverage-v8": "^2.0.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "jszip": "^3.10.1"
+  }
+}
