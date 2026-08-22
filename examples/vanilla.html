@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>address-search-es Widget Example</title>
+  <script type="module">
+    import { defineCustomElement } from '../packages/widget/dist/components/address-search-es.js';
+    defineCustomElement();
+  </script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 1rem; }
+    address-search-es { width: 100%; }
+    .log { font-size: 0.85rem; color: #64748b; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Spanish Address Autocomplete</h1>
+  <address-search-es
+    typesense-host="127.0.0.1"
+    typesense-port="8108"
+    typesense-api-key="xyz"
+    typesense-protocol="http"
+    placeholder="Buscar calle, municipio o código postal…"
+  ></address-search-es>
+  <div class="log" id="log">Escribe una dirección…</div>
+  <script>
+    const widget = document.querySelector('address-search-es');
+    widget.addEventListener('addressSelected', (e) => {
+      document.getElementById('log').textContent = 'Seleccionado: ' + JSON.stringify(e.detail);
+    });
+    widget.addEventListener('error', (e) => {
+      document.getElementById('log').textContent = 'Error: ' + e.detail.message;
+    });
+  </script>
+</body>
+</html>

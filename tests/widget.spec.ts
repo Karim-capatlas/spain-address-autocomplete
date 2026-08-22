@@ -9,7 +9,7 @@ async function waitForWidget(page: Page): Promise<void> {
 
 test.describe('address-search-es widget', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/widget-example.html')
+    await page.goto('/examples/vanilla.html')
     await waitForWidget(page)
   })
 
