@@ -23,6 +23,7 @@ import { createTypesenseClient, searchAddresses } from '@spain-address/core'
 type AddressRecord = import('@spain-address/core').AddressRecord
 type SearchGroup = import('@spain-address/core').SearchGroup
 type TypesenseClient = import('@spain-address/core').TypesenseClient
+type SearchResult = import('@spain-address/core').SearchResult
 
 interface NavNode {
   kind: 'header' | 'item'
@@ -42,6 +43,15 @@ export class AddressSearchEs {
   private collapsed = new Set<string>() // municipio_id -> collapsed
 
   /* ===== observed attributes (public API) ===== */
+  /**
+   * URL of a search proxy (BFF) that wraps Typesense server-side, e.g.
+   * "/api/address-search". When set, the widget fetches JSON from this
+   * endpoint instead of talking to Typesense directly — so no credentials
+   * are exposed to the client. The endpoint must accept `?q=&cp=&per_page=
+   * &group_limit=&provincia=&municipio=` and return the same shape as
+   * `SearchResult` from @spain-address/core.
+   */
+  @Prop({ reflect: true }) endpoint = ''
   @Prop({ reflect: true }) typesenseHost = ''
   @Prop({ reflect: true }) typesensePort = 8108
   @Prop({ reflect: true }) typesenseApiKey = ''
@@ -82,14 +92,16 @@ export class AddressSearchEs {
   }
 
   private client(): TypesenseClient | null {
+    if (this.endpoint) return null // proxy mode: no direct Typesense access
     if (!this.typesenseHost) {
-      const msg = 'attribute "typesense-host" is required'
+      const msg =
+        'either attribute "endpoint" (proxy mode) or "typesense-host" + "typesense-api-key" (direct mode) is required'
       this.errorMsg = msg
       this.error.emit({ message: msg })
       return null
     }
     if (!this.typesenseApiKey) {
-      const msg = 'attribute "typesense-api-key" is required'
+      const msg = 'attribute "typesense-api-key" is required in direct mode'
       this.errorMsg = msg
       this.error.emit({ message: msg })
       return null
@@ -104,6 +116,24 @@ export class AddressSearchEs {
     })
   }
 
+  /** Proxy-mode search: GET `${endpoint}?q=…` returning a `SearchResult` JSON. */
+  private async searchViaEndpoint(cp: boolean, q: string): Promise<SearchResult> {
+    const url = new URL(this.endpoint, window.location.href)
+    url.searchParams.set('q', cp ? '' : q)
+    if (cp) url.searchParams.set('cp', q)
+    url.searchParams.set('per_page', String(this.maxGroups))
+    url.searchParams.set('group_limit', String(this.groupLimit))
+    if (this.scopeProvincia) url.searchParams.set('provincia', this.scopeProvincia)
+    const municipio = this.scopeMunicipalidad()
+    if (municipio) url.searchParams.set('municipio', municipio)
+    const res = await fetch(url.toString(), { headers: { accept: 'application/json' } })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw Object.assign(new Error(`proxy ${res.status}: ${body.slice(0, 200)}`), { status: res.status })
+    }
+    return (await res.json()) as SearchResult
+  }
+
   private async doSearch(): Promise<void> {
     const q = this.query.trim()
     if (q.length < 2) {
@@ -111,42 +141,56 @@ export class AddressSearchEs {
       this.open = false
       return
     }
-    const client = this.client()
-    if (!client) return
-
-    this.loading = true
-    this.errorMsg = ''
-    try {
-      const cp = this.detectCp && this.isFiveDigits(q)
-      const result = await searchAddresses(
-        {
-          query: cp ? '' : q,
-          perPage: this.maxGroups,
-          groupLimit: this.groupLimit,
-          filterByCP: cp ? q : undefined,
-          filterByProvincia: this.scopeProvincia || undefined,
-          filterByMunicipio: this.scopeMunicipalidad(),
-          // §3.1.7: bold matched tokens inside the result label.
-          highlight: true,
-        },
-        { client },
-      )
-      this.groups = result.groups
-      this.total = result.total
-      this.open = true
-      this.focused = result.groups.length ? 0 : -1
-      this.errorMsg = ''
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      // @ts-expect-error HTTP errors carry a status
-      const code = e?.status
-      if (msg !== 'AbortError' && !msg.includes('aborted')) {
-        this.errorMsg = msg
-        this.error.emit({ message: msg, code })
-        this.open = false
+    const cp = this.detectCp && this.isFiveDigits(q)
+    let result: SearchResult
+    if (this.endpoint) {
+      try {
+        result = await this.searchViaEndpoint(cp, q)
+      } catch (e: unknown) {
+        this.handleError(e)
+        return
       }
-    } finally {
-      this.loading = false
+    } else {
+      const client = this.client()
+      if (!client) return
+      this.loading = true
+      this.errorMsg = ''
+      try {
+        result = await searchAddresses(
+          {
+            query: cp ? '' : q,
+            perPage: this.maxGroups,
+            groupLimit: this.groupLimit,
+            filterByCP: cp ? q : undefined,
+            filterByProvincia: this.scopeProvincia || undefined,
+            filterByMunicipio: this.scopeMunicipalidad(),
+            // §3.1.7: bold matched tokens inside the result label.
+            highlight: true,
+          },
+          { client },
+        )
+      } catch (e: unknown) {
+        this.handleError(e)
+        return
+      } finally {
+        this.loading = false
+      }
+    }
+    this.groups = result.groups
+    this.total = result.total
+    this.open = true
+    this.focused = result.groups.length ? 0 : -1
+    this.errorMsg = ''
+  }
+
+  private handleError(e: unknown): void {
+    const msg = e instanceof Error ? e.message : String(e)
+    // @ts-expect-error HTTP errors carry a status
+    const code = e?.status
+    if (msg !== 'AbortError' && !msg.includes('aborted')) {
+      this.errorMsg = msg
+      this.error.emit({ message: msg, code })
+      this.open = false
     }
   }
 
