@@ -38,7 +38,7 @@
 - [ ] Write bulk-import script (JSONL → Redis JSON)
 - [ ] Write `packages/mcp/` MCP server with `normalize_address` tool
 - [ ] Migrate `packages/core/src/search.ts` to use Upstash Redis
-- [ ] All 77 tests pass with Redis Search backend
+- [ ] All 86 tests pass with Redis Search backend
 
 **Success:** Standalone MCP server normalizes address strings using the real 749K-record dataset.
 
