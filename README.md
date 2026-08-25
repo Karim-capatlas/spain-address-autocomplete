@@ -43,28 +43,30 @@ Spain's **SES.HOSPEDAJES** requirements.
 
 ```bash
 # Clone + install
-git clone https://github.com/karim/es-street-finder
-cd es-street-finder
+git clone https://github.com/Karim-capatlas/spain-address-autocomplete
+cd spain-address-autocomplete
 pnpm install
 
-# Run typecheck + tests
-pnpm typecheck
-pnpm test
+# Verify (Phase 0-3 — all green)
+pnpm typecheck    # 6 packages, green
+pnpm test         # 86 tests, passing
+pnpm build        # 5 packages, builds
 
-# Build
-pnpm build
+# Run MCP server (Phase 3.5 — coming soon)
+# See packages/mcp/README.md for Docker setup
 ```
 
 > Data snapshots are in `packages/data/snapshots/`. The live 749,261-record
-> dataset is loaded into a Typesense/Redis Search collection. See
-> [CLAUDE.md](./CLAUDE.md) for full development context.
+> dataset is loaded into a Typesense/Redis Search collection.
+> **Full product doc:** [PRODUCT.md](./PRODUCT.md)
+> **Development context:** [CLAUDE.md](./CLAUDE.md)
 
 ## Roadmap
 
 See [ROADMAP.md](./ROADMAP.md) for the phased plan:
 - Phase 0-3 (done): ETL pipeline, Typesense schema, Stencil widget
 - Phase 3.5 (next): Upstash Redis Search migration + MCP server
-- Phase 4-5: Docker, CI/CD, public docs
+- Phase 4-6: Docker, CI/CD, docs + blog post
 
 ## License
 
