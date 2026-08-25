@@ -16,17 +16,17 @@
 
 ---
 
-## Phase 0 (THIS WEEK): Repository Setup & Public Foundation
+## Phase 0 (DONE): Repository Setup & Public Foundation
 
 **Goal:** Get `spain-address-autocomplete` live and public on GitHub.
 
-- [ ] `git init` + commit all phases 0-3
-- [ ] Push to `github.com/karim/es-street-finder` (public)
-- [ ] Write `README.md` with "System Context" section (MCP + DNI/TIE OCR pipeline)
-- [ ] Fix `package.json` (name, description, license, repo)
-- [ ] Apply to Upstash OSS Program
+- [x] `git init` + commit all phases 0-3
+- [x] Push to `github.com/Karim-capatlas/spain-address-autocomplete` (public)
+- [x] Write `README.md` with "System Context" section (MCP + DNI/TIE OCR pipeline)
+- [x] Fix `package.json` (name, description, license, author, repo)
+- [x] Fix pre-existing proxy test failure (non-deterministic `took_ms`, mismatched mock)
 
-**Success:** Someone can `git clone` and understand the project in 30 seconds.
+**Success:** Repo is live at https://github.com/Karim-capatlas/spain-address-autocomplete — 86 tests passing, typecheck green, lint clean.
 
 ---
 
