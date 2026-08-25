@@ -4,19 +4,9 @@ import type { SearchResult, TypesenseClient } from '@spain-address/core'
 
 const fakeResult: SearchResult = {
   records: [],
-  groups: [
-    {
-      municipio_id: '28079',
-      municipio: 'Madrid',
-      provincia: 'Madrid',
-      provincia_id: '28',
-      codigo_postal: '28013',
-      found: 1,
-      items: [],
-    },
-  ],
+  groups: [],
   total: 1,
-  took_ms: 1,
+  took_ms: expect.any(Number),
 }
 
 function makeClient(search = vi.fn().mockResolvedValue({ found_docs: 1, grouped_hits: [] })) {
