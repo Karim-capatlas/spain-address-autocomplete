@@ -59,7 +59,7 @@ pnpm build        # 5 packages, builds
 > Data snapshots are in `packages/data/snapshots/`. The live 749,261-record
 > dataset is loaded into a Typesense/Redis Search collection.
 > **Full product doc:** [PRODUCT.md](./PRODUCT.md)
-> **Development context:** [CLAUDE.md](./CLAUDE.md)
+> **Development context:** [AGENTS.md](./AGENTS.md)
 
 ## Roadmap
 

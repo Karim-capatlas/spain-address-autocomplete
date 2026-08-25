@@ -33,7 +33,7 @@ export const DEFAULT_TYPESENSE_CONFIG: TypesenseConfig = {
   port: Number(env('TYPESENSE_PORT') ?? '8108'),
   protocol: (env('TYPESENSE_PROTOCOL') ?? 'http') as 'http' | 'https',
   // Homebrew formula default api-key is "jana"; aligned to "xyz" in the local
-  // typesense.ini (see CLAUDE.md).
+  // typesense.ini (see AGENTS.md).
   apiKey: env('TYPESENSE_API_KEY') ?? 'xyz',
 }
 

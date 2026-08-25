@@ -13,7 +13,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
-      // PRD / CLAUDE.md minimum coverage targets
+      // PRD / AGENTS.md minimum coverage targets
       include: ['packages/etl/src/transform/**', 'packages/core/src/**'],
       thresholds: {
         lines: 0.8,

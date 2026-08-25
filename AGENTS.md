@@ -1,35 +1,40 @@
-# CLAUDE.md
+# AGENTS.md
 
-> **Working context.** You are operating on this repo through **Pool** (the Poolside
-> agent harness) — the user does **not** use Claude Code. This file is the living
-> agent guide for everything in this repo. Keep it accurate as the codebase evolves.
+> **Working context.** This is the living agent guide for this repo. Read this
+> file first — it contains everything you need to know about the codebase, the
+> toolchain, and the current development state. Recognized by all major agent
+> harnesses: GitHub Copilot, Claude Code, Cursor, etc.
 
 ## Project
 
-`spain-address-autocomplete` — a **free, open-source, self-hostable** Spanish address
-autocomplete system. Drop a Web Component into any app and get instant, accurate
-address suggestions (street name, municipio, provincia, CP, INE codes) backed by a
-Typesense search index, sourced from open government data (INE).
+`spain-address-autocomplete` — an **open-source MCP server** for Spanish address
+normalization. Given noisy address text (e.g. from OCR'd DNI/TIE identity cards),
+it returns structured fields: via type, street name, provincia (name + code),
+municipio (name + code), and código postal.
+
+It is the **address-normalization component** of a larger DNI/TIE OCR pipeline
+(PaddleV6 + WebGPU, zero data retention, SES.HOSPEDAJES-compliant) that extracts
+addresses from Spanish identity cards in-browser and normalizes them via MCP.
 
 - **Stack:** TypeScript (strict) · ESM · pnpm 9 workspaces · Turborepo · TS 5.5 / Node 22 · Vitest 2 · tsup · ESLint (flat) · Prettier (`singleQuote`, no semis)
-- **Data:** INE Callejero (`caj_esp_*.zip`) — streets + municipio master — plus optional CNIG CartoCiudad coordinates
-- **State:** Phase 0 ✅, Phase 1 (ETL) ✅, **Phase 2 (Typesense backend + search) ✅**, and **Phase 3 (Stencil widget) ✅** are implemented and verified. Phases 4–6 are **not started**.
+- **Data:** INE Callejero (`caj_esp_*.zip`) — 749,261 streets across 52 provinces, sourced from open government data
+- **Current migration:** Typesense → **Upstash Redis Search** (Phase 3.5), with a new `packages/mcp/` MCP server wrapping `searchAddresses()` as `normalize_address` + `search_addresses` tools
+- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 🚧 in progress** (Upstash + MCP) · Phases 4–6 🔲 not started
 
 ## Toolchain status (GREEN — do not regress)
 
 Verified end-to-end on this machine:
 
 ```
-pnpm typecheck   # 5/5 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
-pnpm lint        # 4/4 tasks, 0 errors
-pnpm build       # 5/5 tasks — widget now included (`packages/widget`)
-pnpm test        # 77 tests pass (7 files)
-pnpm test:coverage # core/src 99.6/91.5/94.7/99.6 ; etl/src/transform 100% across the board (>80% threshold)
+pnpm typecheck   # 6/6 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
+pnpm lint        # 5/5 tasks, 0 errors
+pnpm build       # 5/5 tasks — widget included (`packages/widget`)
+pnpm test        # 86 tests pass (8 files)
 ```
 
 - Root `vitest.config.ts` (`include: packages/**/src/**/*.{test,spec}.*`, v8, thresholds 0.8)
 - `eslint.config.mjs` is the flat-config version with `@typescript-eslint` + `eslint-plugin-eslint-comments`. **DO NOT** re-add `eslint-plugin-import` or `eslint-plugin-unicorn` — both were rejected: import@2.32 flat-config is incompatible with ESLint 10, and unicorn@55 `expiring-todo-comments` throws `TypeError` (109 real errors surfaced when wired). Lint stays green without them.
-- `lefthook.yml` exists (pre-commit: typecheck+lint; pre-push: test). `lefthook install` has **not** been run (0 git commits — everything is untracked).
+- `lefthook.yml` exists (pre-commit: typecheck+lint; pre-push: test). `lefthook install` has **not** been run — hooks are invoked via direct script calls instead.
 - `.gitignore` excludes `packages/data/raw/` and `*.zip` (raw downloads are local-only, never committed).
 
 ## Phases
@@ -40,9 +45,28 @@ pnpm test:coverage # core/src 99.6/91.5/94.7/99.6 ; etl/src/transform 100% acros
 | 1 | ETL pipeline (INE parser, normalize, merge, dedupe, JSONL+gzip output) | ✅ Done & verified |
 | 2 | Typesense schema + ingestion + search function (`packages/core`) | ✅ Done & verified |
 | 3 | StencilJS widget (`<address-search-es>`, grouped/national‑aware) + React wrappers | ✅ Done (build green; core inlined; React target generated) |
-| 4 | Docker Compose + developer experience | ❌ Not started |
-| 5 | CI/CD (GitHub Actions) | ❌ Not started |
-| 6 | Documentation + OSS release | ❌ Not started |
+| **3.5** | **Upstash Redis Search migration + MCP server** (`packages/mcp/`) | 🚧 In progress |
+| 4 | Docker Compose + developer experience | 🔲 Not started |
+| 5 | CI/CD (GitHub Actions) | 🔲 Not started |
+| 6 | Documentation + OSS release | 🔲 Not started |
+
+### Phase 3.5 — Upstash Redis Search + MCP server (IN PROGRESS)
+
+This is the current focus. The goal: replace Typesense with Upstash Redis Search
+and expose an MCP server.
+
+**Schema migration map (Typesense → Upstash Redis Search):**
+- `query_by` weights `5,3,1,1` → `TEXT via_nombre WEIGHT 5.0 ... TEXT via_nombre_completo WEIGHT 3.0 ... TEXT municipio WEIGHT 1.0 ... TEXT provincia WEIGHT 1.0`
+- `infix: true` → `$smart` / `$fuzzy` query operators (Levenshtein distance 1–2 for OCR typo tolerance)
+- `facet: true` on municipio_id/provincia_id/codigo_postal → `TAG` fields for exact-match filtering
+- `group_by=municipio_id` → `AGGREGATE ... GROUPBY`
+- `highlight: true` → `HIGHLIGHT` in SEARCH.QUERY
+
+**MCP server plan (`packages/mcp/`):**
+- stdio transport (spawnable by Claude Desktop / Cursor / parent OCR pipeline)
+- Tool `normalize_address(text: string)` → single best structured match
+- Tool `search_addresses(query: string, filters?)` → ranked matches
+- Uses `searchAddresses()` from `@spain-address/core` (to be rewritten for Upstash)
 
 ### Phase 3 — Stencil widget (DONE)
 
@@ -225,10 +249,12 @@ Search (via `searchAddresses` against the built core):
 | Package | Purpose | Status |
 |---|---|---|
 | `packages/etl` | INE ZIP downloader, `TRAM` parser, `UP` municipio derivation, normalize/merge/dedupe, JSONL+gzip writer, CLI | ✅ Complete |
-| `packages/core` | `AddressRecord`/`SearchOptions`/`SearchResult` types + Typesense REST client + `searchAddresses` | ✅ Complete (Phase 2) |
+| `packages/core` | `AddressRecord`/`SearchOptions`/`SearchResult` types + Typesense REST client + `searchAddresses` | ✅ Complete (Phase 2, migrating to Upstash in Phase 3.5) |
 | `packages/typesense` | `callejero_es` collection schema + bulk-import CLI (`import.ts`) | ✅ Complete (Phase 2) |
-| `packages/widget` | **StencilJS** custom element `<address-search-es>` (grouped results, CP detection, province scoping) + generated React/Vue/Angular wrappers | ⏳ Planned |
+| `packages/widget` | **StencilJS** custom element `<address-search-es>` (grouped results, CP detection, province scoping) + generated React/Vue/Angular wrappers | ✅ Done |
+| `packages/proxy` | Hono BFF proxy (`GET /api/address-search`, `GET /health`) — hides Typesense credentials from the browser | ✅ Complete |
 | `packages/react` | **Superseded** — replaced by the Stencil‑generated React target (`@spain-address/widget/react`) | n/a |
+| `packages/mcp` | **MCP server** — stdio transport, `normalize_address` + `search_addresses` tools | 🚧 Phase 3.5 |
 
 ### `packages/etl` — key files
 - `src/index.ts` — `commander` CLI with `run` and `validate` subcommands.
@@ -259,15 +285,14 @@ Search (via `searchAddresses` against the built core):
 ```bash
 pnpm install
 pnpm typecheck      # 6/6
-pnpm lint           # 0 errors (53 no-console warnings)
+pnpm lint           # 0 errors
 pnpm build          # 5/5
-pnpm test           # 75 tests
-pnpm test:coverage  # >=80% (etl/transform 100%, core/src 99.5% / 92.6% branch)
+pnpm test           # 86 tests
 
 # ETL
 pnpm exec tsx packages/etl/src/index.ts run   --year 2026 --month 1 --provinces 28 \
   --skip-download --output packages/data/snapshots/callejero_2026-01_28.jsonl
-pnpm exec tsx packages/etl/src/index.ts validate packages/data/snapshots/callejero_2026-01-28.jsonl
+pnpm exec tsx packages/etl/src/index.ts validate packages/data/snapshots/callejero_2026-01_28.jsonl
 
 # Typesense (run `pnpm build` first — core's client ships in dist/; the
 # `preimport` hook runs `pnpm -r build` automatically, so this is enough):
@@ -287,7 +312,7 @@ pnpm typesense:import -- --snapshot packages/data/snapshots/callejero_2026-01_28
 - `data/municipios.csv` does **not** exist and no official fetchable URL was found;
   municipio names are derived from `UP` inside the INE ZIP.
 
-## Typesense server setup (brew, no sudo)
+## Local Typesense server setup (brew, no sudo)
 
 The Homebrew `typesense-server@30.2` formula ships a config at
 `/opt/homebrew/etc/typesense/typesense.ini` that points `data-dir` at
