@@ -47,13 +47,16 @@ git clone https://github.com/Karim-capatlas/spain-address-autocomplete
 cd spain-address-autocomplete
 pnpm install
 
-# Verify (Phase 0-3 — all green)
-pnpm typecheck    # 6 packages, green
-pnpm test         # 86 tests, passing
-pnpm build        # 5 packages, builds
+# Verify (Phase 0-3 + 3.5 code — all green)
+pnpm typecheck    # 8 packages, green
+pnpm test         # 104 tests, passing
+pnpm build        # 8 packages, builds
 
-# Run MCP server (Phase 3.5 — coming soon)
-# See packages/mcp/README.md for Docker setup
+# MCP server (Phase 3.5) — stdio JSON-RPC
+pnpm --filter @spain-address/mcp start
+
+# Load a snapshot into Upstash Redis Search (needs UPSTASH_REDIS_REST_URL/TOKEN)
+pnpm upstash:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
 ```
 
 > Data snapshots are in `packages/data/snapshots/`. The live 749,261-record

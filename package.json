@@ -15,7 +15,8 @@
     "dev": "turbo run dev --parallel --filter=@spain-address/*",
     "clean": "turbo run clean && rm -rf node_modules",
     "etl": "pnpm --filter etl run start",
-    "typesense:import": "pnpm --filter @spain-address/typesense run import"
+    "typesense:import": "pnpm --filter @spain-address/typesense run import",
+    "upstash:import": "pnpm --filter @spain-address/upstash run import"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

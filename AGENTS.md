@@ -26,10 +26,10 @@ addresses from Spanish identity cards in-browser and normalizes them via MCP.
 Verified end-to-end on this machine:
 
 ```
-pnpm typecheck   # 6/6 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
-pnpm lint        # 5/5 tasks, 0 errors
-pnpm build       # 5/5 tasks — widget included (`packages/widget`)
-pnpm test        # 86 tests pass (8 files)
+pnpm typecheck   # 8/8 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
+pnpm lint        # 7/7 tasks, 0 errors
+pnpm build       # 8/8 tasks — widget included (`packages/widget`)
+pnpm test        # 104 tests pass (10 files)
 ```
 
 - Root `vitest.config.ts` (`include: packages/**/src/**/*.{test,spec}.*`, v8, thresholds 0.8)
@@ -254,7 +254,16 @@ Search (via `searchAddresses` against the built core):
 | `packages/widget` | **StencilJS** custom element `<address-search-es>` (grouped results, CP detection, province scoping) + generated React/Vue/Angular wrappers | ✅ Done |
 | `packages/proxy` | Hono BFF proxy (`GET /api/address-search`, `GET /health`) — hides Typesense credentials from the browser | ✅ Complete |
 | `packages/react` | **Superseded** — replaced by the Stencil‑generated React target (`@spain-address/widget/react`) | n/a |
-| `packages/mcp` | **MCP server** — stdio transport, `normalize_address` + `search_addresses` tools | 🚧 Phase 3.5 |
+| `packages/upstash` | **Upstash Redis Search** backend: FT.CREATE schema (TEXT weights 5/3/1/1 + TAG filters), REST client (zero-dep fetch, pipeline support), `searchAddressesUpstash` with fuzzy `%term%` queries, bulk-import CLI | 🚧 Phase 3.5 (code done, live import pending) |
+| `packages/mcp` | **MCP server** — stdio JSON-RPC (`initialize`/`tools/list`/`tools/call`), `normalize_address` + `search_addresses` tools over `@spain-address/core` | 🚧 Phase 3.5 (code done, live verification pending) |
+
+#### Phase 3.5 implementation notes (do not rediscover)
+
+- `packages/upstash/src/search.ts` builds `FT.SEARCH <index> "@tag:{v} %word1% %word2%" …` — `%term%` is Redis Search's fuzzy operator (Levenshtein 1), standing in for Typesense's `num_typos`. Special chars in user terms are escaped.
+- Upstash REST replies decode FT.SEARCH as a flat array `[total, key1, doc1, key2, doc2, …]`; docs may be flat `[field, value, …]` arrays or objects — `parseSearchReply` handles both. Grouping is done client-side (`groupRecords`) since AGGREGATE GROUPBY is deferred.
+- Import stores each record as one hash (`HSET callejero:<id> data <jsonl-line>`); read path parses JSON back to `AddressRecord`.
+- `packages/mcp/src/cli.ts` implements the MCP handshake minimally over newline-delimited JSON-RPC on stdio (no SDK dependency). Smoke-tested: `initialize`, `tools/list` respond correctly.
+- Remaining for Phase 3.5 completion: provision Upstash (or local `redis-search` / REST server), run `pnpm upstash:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop`, verify live searches, and decide whether core's `searchAddresses` default flips from Typesense to Upstash.
 
 ### `packages/etl` — key files
 - `src/index.ts` — `commander` CLI with `run` and `validate` subcommands.
