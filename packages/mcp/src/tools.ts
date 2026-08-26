@@ -15,6 +15,20 @@ export interface ToolDeps extends Partial<SearchDependencies> {
   search?: typeof searchAddresses
 }
 
+/**
+ * Project only the backend fields of `ToolDeps` into a concrete
+ * `SearchDependencies` — so an injected Upstash `command` (or a Typesense
+ * `client`) is forwarded to `searchAddresses`, not just `client`.
+ */
+function backendDeps(deps: ToolDeps): SearchDependencies {
+  return {
+    client: deps.client,
+    collection: deps.collection,
+    command: deps.command,
+    index: deps.index,
+  }
+}
+
 export const NORMALIZE_ADDRESS_TOOL = {
   name: 'normalize_address',
   description:
@@ -109,10 +123,7 @@ export async function normalizeAddress(
     filterByProvincia: args.provincia_id,
   }
   const run = deps.search ?? searchAddresses
-  const result = await run(options, {
-    client: deps.client as SearchDependencies['client'],
-    ...(deps.collection != null && { collection: deps.collection }),
-  })
+  const result = await run(options, backendDeps(deps))
   if (!result.records.length) {
     return jsonContent({ error: 'no_match', query })
   }
@@ -139,10 +150,7 @@ export async function searchAddressesTool(
       filterByMunicipio: args.municipio_id,
       filterByCP: args.codigo_postal,
     },
-    {
-      client: deps.client as SearchDependencies['client'],
-      ...(deps.collection != null && { collection: deps.collection }),
-    },
+    backendDeps(deps),
   )
   return jsonContent({
     total: result.total,

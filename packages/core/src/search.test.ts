@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { searchAddresses, buildFilter } from './search.js'
+import { createSearchClient } from './search-client.js'
 import type { TypesenseClient, TypesenseSearchResponse } from './typesense.js'
 import type { AddressRecord } from './types.js'
 
@@ -258,5 +259,86 @@ describe('searchAddresses', () => {
     await searchAddresses({ query: 'x' }, { client: fakeClient({ found: 0, hits: [] }, captured) })
     expect(captured.params?.highlight).toBeUndefined()
     expect(captured.params?.highlight_full).toBeUndefined()
+  })
+})
+
+describe('searchAddresses (Upstash dispatch)', () => {
+  test('routes to the Upstash command fn and groups by municipio', async () => {
+    const seen: string[][] = []
+    const command = async (args: string[]): Promise<unknown> => {
+      seen.push(args)
+      return [
+        2,
+        'callejero:abc',
+        [
+          'id', 'abc', 'via_nombre_completo', 'Calle Mayor', 'municipio_id', '28079',
+          'municipio', 'Madrid', 'provincia', 'Madrid', 'provincia_id', '28',
+          'codigo_postal', '28013', 'label', 'Calle Mayor, Madrid (28013)',
+        ],
+        'callejero:def',
+        {
+          id: 'def',
+          via_nombre_completo: 'Calle Menor',
+          municipio_id: '28005',
+          municipio: 'Alcalá de Henares',
+          provincia: 'Madrid',
+          provincia_id: '28',
+          codigo_postal: '28005',
+          label: 'Calle Menor, Alcalá (28005)',
+        },
+      ]
+    }
+    const result = await searchAddresses({ query: 'Mayor', perPage: 5 }, { command })
+
+    expect(seen[0]?.[0]).toBe('FT.SEARCH')
+    expect(seen[0]?.[1]).toBe('callejero_es')
+    expect(seen[0]?.[2]).toContain('%Mayor%')
+    expect(seen[0]?.[4]).toBe('0') // LIMIT 0
+    expect(seen[0]?.[5]).toBe('5') // per_page override
+    expect(result.total).toBe(2)
+    expect(result.records.map((r) => r.id)).toEqual(['abc', 'def'])
+    expect(result.groups).toHaveLength(2)
+    expect(result.groups[0].items[0].via_nombre_completo).toBe('Calle Mayor')
+    expect(result.groups[1].municipio).toBe('Alcalá de Henares')
+  })
+
+  test('prefers the Upstash command when both command and client are provided', async () => {
+    const command = async (): Promise<unknown> => [0]
+    const search = vi.fn().mockResolvedValue({ found: 0, hits: [] })
+    await searchAddresses({ query: 'x' }, {
+      command,
+      client: { search } as unknown as TypesenseClient,
+    })
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  test('throws when no backend is configured', async () => {
+    await expect(searchAddresses({ query: 'x' }, {})).rejects.toThrow('no backend configured')
+  })
+})
+
+describe('createSearchClient', () => {
+  test('defaults to the Upstash/Redis backend when env is configured', () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://example.test')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'token')
+    try {
+      const deps = createSearchClient()
+      expect(typeof deps.command).toBe('function')
+      expect(deps.client).toBeUndefined()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  test('falls back to Typesense when Upstash env is absent', () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', '')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
+    try {
+      const deps = createSearchClient()
+      expect(deps.client).toBeDefined()
+      expect(deps.command).toBeUndefined()
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })

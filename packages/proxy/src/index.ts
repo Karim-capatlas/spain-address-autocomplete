@@ -2,22 +2,21 @@
  * Backend-for-frontend (BFF) proxy for the Spanish address search.
  *
  * The browser widget (`<address-search-es endpoint="…">`) talks to THIS server,
- * never to Typesense directly — so the Typesense host/port/api-key stay
- * server-side and are read from env vars (TYPESENSE_HOST / TYPESENSE_PORT /
- * TYPESENSE_API_KEY / TYPESENSE_PROTOCOL), exactly like `createTypesenseClient`
- * defaults.
+ * never to the search backend directly — so backend credentials stay
+ * server-side and are resolved by core's `createSearchClient()`, which prefers
+ * Upstash/Redis Search (UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN) and
+ * falls back to Typesense (TYPESENSE_HOST / TYPESENSE_PORT / TYPESENSE_API_KEY
+ * / TYPESENSE_PROTOCOL).
  *
  * Contract: GET /api/address-search?q=…[&cp=&per_page=&group_limit=&provincia=&municipio=]
  * → JSON `SearchResult` (same shape as @spain-address/core's searchAddresses).
  */
 
 import { Hono } from 'hono'
-import { createTypesenseClient, searchAddresses } from '@spain-address/core'
-import type { SearchOptions, SearchResult, TypesenseClient } from '@spain-address/core'
+import { createSearchClient, searchAddresses } from '@spain-address/core'
+import type { SearchDependencies, SearchOptions, SearchResult } from '@spain-address/core'
 
-export interface ProxyDependencies {
-  client: TypesenseClient
-}
+export type ProxyDependencies = SearchDependencies
 
 /** Max accepted query length — keeps the URL sane and blocks abuse. */
 const MAX_QUERY_LENGTH = 100
@@ -55,7 +54,7 @@ export function createApp(deps: ProxyDependencies): Hono {
     }
 
     try {
-      const result: SearchResult = await searchAddresses(options, { client: deps.client })
+      const result: SearchResult = await searchAddresses(options, deps)
       return c.json(result)
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e)
@@ -68,7 +67,7 @@ export function createApp(deps: ProxyDependencies): Hono {
   return app
 }
 
-/** Convenience factory used by the CLI: env-driven Typesense client + app. */
+/** Convenience factory used by the CLI: env-driven default backend + app. */
 export function createProxyApp(): Hono {
-  return createApp({ client: createTypesenseClient() })
+  return createApp(createSearchClient())
 }

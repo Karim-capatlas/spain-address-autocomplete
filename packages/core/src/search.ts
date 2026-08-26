@@ -1,13 +1,21 @@
 /**
- * High-level address search over the Typesense `callejero_es` collection.
+ * Address search entry point (backend-agnostic).
  *
- * `searchAddresses` is the single entry point consumed by the widget packages.
- * It depends on the abstract `TypesenseClient` (see `./typesense.ts`), so it can
- * be unit-tested by injecting a fake client — no live Typesense required.
+ * `searchAddresses` is the single entry point consumed by the widget, MCP
+ * server, and proxy. As of Phase 3.5 it dispatches to whichever backend a
+ * caller provides:
+ *  - Upstash / Redis Search: when `deps.command` (a transport-agnostic command
+ *    fn) is supplied — the preferred backend.
+ *  - Typesense: when `deps.client` (a `TypesenseClient`) is supplied — kept for
+ *    backward compatibility and the widget's direct mode.
+ *
+ * Inject a fake `command`/`client` to unit-test without a live server.
  */
 
 import type { TypesenseClient, TypesenseSearchResponse } from './typesense.js'
-import type { AddressRecord, Highlight, SearchGroup, SearchOptions, SearchResult } from './types.js'
+import { toAddressRecord } from './record.js'
+import type { SearchCommand } from './redis.js'
+import type { Highlight, AddressRecord, SearchGroup, SearchOptions, SearchResult } from './types.js'
 
 // Mirrors the schema in packages/typesense/src/schema.ts (the indexed fields
 // must match what `typesense:import` writes).
@@ -16,16 +24,35 @@ export const SEARCH_QUERY_BY_WEIGHTS = '5,3,1,1'
 export const SEARCH_GROUP_BY = 'municipio_id'
 export const SEARCH_GROUP_LIMIT = 3
 
+export interface SearchDependencies {
+  /** Typesense backend (widget direct mode + local fallback). */
+  client?: TypesenseClient
+  /** Collection name override for the Typesense backend. */
+  collection?: string
+  /** Upstash / Redis Search backend (Phase 3.5 default when configured). */
+  command?: SearchCommand
+  /** Index override for the Upstash / Redis Search backend. */
+  index?: string
+}
+
 /**
- * Extract the municipio groups from a Typesense `group_by=municipio_id`
- * response. Each group carries its `group_key` (the municipio_id), the
- * representative municipio/provincia/CP from its top hit, and up to
- * `group_limit` `AddressRecord` items. Returns `[]` for non-grouped responses.
+ * Convert a Typesense hit document into a typed `AddressRecord`, attaching the
+ * `<mark>`-wrapped highlight snippets Typesense returns per hit.
  */
+function toTypesenseRecord(
+  doc: Record<string, unknown>,
+  highlights?: Highlight[],
+): AddressRecord {
+  return toAddressRecord(doc, highlights)
+}
+
+/** Extract the municipio groups from a Typesense `group_by=municipio_id` response. */
 function extractGroups(response: TypesenseSearchResponse): SearchGroup[] {
   if (!response.grouped_hits) return []
   return response.grouped_hits.map((group) => {
-    const items = group.hits.map((hit) => toAddressRecord(hit.document, hit.highlights))
+    const items = group.hits.map((hit) =>
+      toTypesenseRecord(hit.document, hit.highlights),
+    )
     const first = items[0] ?? ({} as AddressRecord)
     return {
       municipio_id: String(group.group_key?.[0] ?? first.municipio_id ?? ''),
@@ -37,37 +64,6 @@ function extractGroups(response: TypesenseSearchResponse): SearchGroup[] {
       items,
     }
   })
-}
-
-export interface SearchDependencies {
-  client: TypesenseClient
-  collection?: string
-}
-
-/**
- * Convert a Typesense hit document (`Record<string, unknown>`) into a typed
- * `AddressRecord`. Typesense returns every value as a string; we pass them
- * through unchanged — consumers coerce `lat`/`lon` lazily if needed.
- */
-function toAddressRecord(doc: Record<string, unknown>, highlights?: Highlight[]): AddressRecord {
-  const id = String(doc.id ?? '')
-  return {
-    id,
-    via_nombre: String(doc.via_nombre ?? ''),
-    via_tipo: String(doc.via_tipo ?? ''),
-    via_nombre_completo: String(doc.via_nombre_completo ?? ''),
-    municipio: String(doc.municipio ?? ''),
-    municipio_id: String(doc.municipio_id ?? ''),
-    provincia: String(doc.provincia ?? ''),
-    provincia_id: String(doc.provincia_id ?? ''),
-    comunidad_autonoma: String(doc.comunidad_autonoma ?? ''),
-    comunidad_autonoma_id: String(doc.comunidad_autonoma_id ?? ''),
-    codigo_postal: String(doc.codigo_postal ?? ''),
-    label: String(doc.label ?? ''),
-    lat: doc.lat != null ? Number(doc.lat) : undefined,
-    lon: doc.lon != null ? Number(doc.lon) : undefined,
-    highlights,
-  }
 }
 
 /** Compose a Typesense `filter_by` expression from the structured options. */
@@ -95,22 +91,51 @@ function extractRecords(response: TypesenseSearchResponse): AddressRecord[] {
   if (response.grouped_hits) {
     for (const group of response.grouped_hits) {
       for (const hit of group.hits) {
-        records.push(toAddressRecord(hit.document, hit.highlights))
+        records.push(toTypesenseRecord(hit.document, hit.highlights))
       }
     }
   } else {
     for (const hit of response.hits ?? []) {
-      records.push(toAddressRecord(hit.document, hit.highlights))
+      records.push(toTypesenseRecord(hit.document, hit.highlights))
     }
   }
   return records
 }
 
+/** Extract the Upstash search deps from the dispatch-style `SearchDependencies`. */
+function upstashDeps(deps: SearchDependencies): { command: SearchCommand; index?: string } {
+  const command = deps.command
+  if (!command) throw new Error('Upstash backend requires a deps.command function')
+  return { command, index: deps.index }
+}
+
+
 export async function searchAddresses(
   options: SearchOptions,
   deps: SearchDependencies,
 ): Promise<SearchResult> {
+  // Phase 3.5 default: prefer Upstash / Redis Search when a command fn is wired.
+  // The Upstash implementation is lazy-imported so backends that only use
+  // Typesense (e.g. the browser widget's direct mode) never pull the Upstash
+  // REST client into their bundle.
+  if (deps.command) {
+    const { searchAddressesUpstash } = await import('./redis.js')
+    return searchAddressesUpstash(options, upstashDeps(deps))
+  }
+  if (deps.client) {
+    return searchAddressesTypesense(options, deps)
+  }
+  throw new Error(
+    'searchAddresses: no backend configured — provide deps.command (Upstash) or deps.client (Typesense)',
+  )
+}
+
+export async function searchAddressesTypesense(
+  options: SearchOptions,
+  deps: SearchDependencies,
+): Promise<SearchResult> {
   const collection = deps.collection ?? 'callejero_es'
+  const client = deps.client as TypesenseClient
   const params: Record<string, string | number | boolean | undefined> = {
     q: options.query,
     query_by: SEARCH_QUERY_BY,
@@ -129,7 +154,7 @@ export async function searchAddresses(
   }
 
   const start = Date.now()
-  const response = await deps.client.search(collection, params)
+  const response = await client.search(collection, params)
   const records = extractRecords(response)
   return {
     records,

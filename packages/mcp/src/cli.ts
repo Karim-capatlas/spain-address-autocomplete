@@ -9,11 +9,16 @@
  * Implements the MCP handshake minimally over newline-delimited JSON-RPC so it
  * works without pulling the full SDK into the build (kept dependency-light by
  * design; swap for @modelcontextprotocol/sdk when publishing).
+ *
+ * Backend selection uses core's `createSearchClient()` (Phase 3.5): prefers
+ * Upstash/Redis Search when UPSTASH_REDIS_REST_URL/TOKEN are set, falling back
+ * to the local Typesense server. Set the env vars in the MCP server block:
+ *   "env": { "UPSTASH_REDIS_REST_URL": "…", "UPSTASH_REDIS_REST_TOKEN": "…" }
  */
 
 import { createInterface } from 'node:readline'
 import { dispatchTool, TOOLS } from './tools.js'
-import { createTypesenseClient } from '@spain-address/core'
+import { createSearchClient } from '@spain-address/core'
 
 interface JsonRpcRequest {
   jsonrpc: '2.0'
@@ -66,8 +71,8 @@ async function handle(req: JsonRpcRequest): Promise<void> {
       const name = String(req.params?.name ?? '')
       const args = (req.params?.arguments ?? {}) as Record<string, unknown>
       try {
-        const client = createTypesenseClient()
-        const toolResult = await dispatchTool(name, args, { client })
+        const deps = createSearchClient()
+        const toolResult = await dispatchTool(name, args, deps)
         if (!toolResult) {
           respond(req.id, { error: { code: -32602, message: `Unknown tool: ${name}` } })
           return

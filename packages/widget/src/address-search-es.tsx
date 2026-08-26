@@ -25,7 +25,7 @@ import {
 // @ts-expect-error -- no public .d.ts; global.d.ts declares a loose `h` + permissive JSX so custom attrs stay typed
 import { h } from '@stencil/core/internal/client'
 /* eslint-enable @typescript-eslint/no-unused-vars */
-import { createTypesenseClient, searchAddresses } from '@spain-address/core'
+import { createTypesenseClient, searchAddressesTypesense } from '@spain-address/core'
 
 /** @stencil/core's published types for the records this component renders. */
 type AddressRecord = import('@spain-address/core').AddressRecord
@@ -185,7 +185,7 @@ export class AddressSearchEs {
         const client = this.client()
         if (!client) return
         this.loading = true
-        result = await searchAddresses(
+        result = await searchAddressesTypesense(
           {
             query: cp ? '' : q,
             perPage: this.effectiveLimit(),
