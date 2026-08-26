@@ -34,13 +34,15 @@
 
 **Goal:** `normalize_address("Calle Mayor, Madrid")` → `{ via_type: "Calle", via_name: "Mayor", provincia: "Madrid", ... }`
 
-- [ ] Define Redis Search schema (`SEARCH.CREATE`)
-- [ ] Write bulk-import script (JSONL → Redis JSON)
-- [ ] Write `packages/mcp/` MCP server with `normalize_address` tool
-- [ ] Migrate `packages/core/src/search.ts` to use Upstash Redis
-- [ ] All 86 tests pass with Redis Search backend
+- [x] Define Redis Search schema (`FT.CREATE` — TEXT weights 5/3/1/1 + TAG filters, `packages/upstash/src/schema.ts`)
+- [x] Write bulk-import script (JSONL/gzip → HSET; REST CLI + local RESP variant in `scripts/redis-import-verify.ts`)
+- [x] Write `packages/mcp/` MCP server with `normalize_address` tool (+ `search_addresses`)
+- [x] Upstash Redis Search backend implemented (`packages/upstash/src/{client,search}.ts`) alongside Typesense
+- [x] All 104 tests pass; live-verified against a local RediSearch container with the full 749K-record dataset
+- [ ] Flip `@spain-address/core` default to the Redis Search backend
+- [ ] Optional: verify the REST client path with real Upstash Cloud credentials
 
-**Success:** Standalone MCP server normalizes address strings using the real 749K-record dataset.
+**Success:** Standalone MCP server normalizes address strings using the real 749K-record dataset. ✅ Achieved locally (`docker compose up -d redisearch` → `pnpm --filter @spain-address/mcp start`).
 
 ---
 

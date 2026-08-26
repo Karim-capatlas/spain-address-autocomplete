@@ -68,8 +68,11 @@ pnpm upstash:import -- --snapshot packages/data/snapshots/callejero_2026-01.json
 
 See [ROADMAP.md](./ROADMAP.md) for the phased plan:
 - Phase 0-3 (done): ETL pipeline, Typesense schema, Stencil widget
-- Phase 3.5 (next): Upstash Redis Search migration + MCP server
-- Phase 4-6: Docker, CI/CD, docs + blog post
+- Phase 3.5 (code done, live-verified): Upstash Redis Search migration + MCP server —
+  `normalize_address` / `search_addresses` served over stdio, 749K docs running in a local
+  RediSearch container (`docker compose up -d redisearch`)
+- Next: flip core's default backend to Redis Search; Dockerfile for the MCP server
+- Then: CI/CD, npm publish, docs + blog post
 
 ## License
 

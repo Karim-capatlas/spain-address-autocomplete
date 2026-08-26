@@ -19,7 +19,7 @@ addresses from Spanish identity cards in-browser and normalizes them via MCP.
 - **Stack:** TypeScript (strict) · ESM · pnpm 9 workspaces · Turborepo · TS 5.5 / Node 22 · Vitest 2 · tsup · ESLint (flat) · Prettier (`singleQuote`, no semis)
 - **Data:** INE Callejero (`caj_esp_*.zip`) — 749,261 streets across 52 provinces, sourced from open government data
 - **Current migration:** Typesense → **Upstash Redis Search** (Phase 3.5), with a new `packages/mcp/` MCP server wrapping `searchAddresses()` as `normalize_address` + `search_addresses` tools
-- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 🚧 in progress** (Upstash + MCP) · Phases 4–6 🔲 not started
+- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 🚧 code complete & live-verified** — `packages/upstash/` + `packages/mcp/` built, 104 tests green, 749K docs indexed & searched in a local RediSearch container (`docker-compose.yml`); remaining: flip core's default backend, optional Upstash Cloud REST test
 
 ## Toolchain status (GREEN — do not regress)
 

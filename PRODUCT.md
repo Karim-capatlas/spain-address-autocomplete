@@ -116,11 +116,19 @@ client-side. An **MCP server** provides the ideal bridge:
 - **Phase 1** — ETL pipeline (INE parser → normalized JSONL, 749,261 records)
 - **Phase 2** — Typesense schema + ingestion + search function (`packages/core`)
 - **Phase 3** — Stencil widget + React wrapper (`packages/widget`)
-- **Phase 0-3 verification:** 86 tests pass, typecheck green (6 packages), lint clean
+- **Phase 3.5 (code)** — `packages/upstash` (schema + REST client + import CLI) and
+  `packages/mcp` (stdio JSON-RPC server with `normalize_address` / `search_addresses`),
+  plus a local RediSearch backend via `docker-compose.yml`
+- **Phase 3.5 (live verification)** — 749,261 docs indexed into the local
+  redis-stack container in ~209 s; searches verified against the Typesense
+  baseline ("Gran Vía" → 134 national; CP-28013 filter → exactly `Calle Mayor,
+  Madrid`). Toolchain: typecheck 8/8 · lint 0 errors · build 8/8 · **104 tests pass**
 
 ### Live state
-- **Typesense:** running at `127.0.0.1:8108`, collection `callejero_es` with **749,261 documents**
-- **Snapshot:** `packages/data/snapshots/callejero_2026-01.jsonl` (249 MB, 749,261 records)
+- **RediSearch (local):** `docker compose up -d redisearch` → redis-stack container on
+  `127.0.0.1:6379`, index `callejero_es` with **749,261 documents** (named volume persists it)
+- **Typesense:** also available at `127.0.0.1:8108` (`callejero_es`, same dataset) — legacy backend
+- **Snapshot:** `packages/data/snapshots/callejero_2026-01.jsonl.gz` (22 MB, 749,261 records)
 - **Repo:** https://github.com/Karim-capatlas/spain-address-autocomplete (public)
 
 ### Data reference
@@ -148,8 +156,8 @@ client-side. An **MCP server** provides the ideal bridge:
 | 1 | ETL pipeline (INE → JSONL) | ✅ Done & verified |
 | 2 | Search schema + core search function | ✅ Done (Typesense) |
 | 3 | Stencil widget + React wrapper | ✅ Done & built |
-| **3.5** | **Upstash Redis Search migration + MCP server** | 🚧 **In progress** |
-| 4 | Docker Compose + Claude Desktop demo | 🔲 Next |
+| **3.5** | **Upstash Redis Search migration + MCP server** | 🚧 Code done & live-verified; wrap-up pending |
+| 4 | Docker Compose + Claude Desktop demo | 🔶 Partially done (search backend composed) |
 | 5 | CI/CD (GitHub Actions) | 🔲 Next |
 | 6 | Docs + blog post | 🔲 Next |
 | 7 | Full DNI/TIE OCR pipeline integration | 🔲 Future |
@@ -158,20 +166,23 @@ client-side. An **MCP server** provides the ideal bridge:
 
 **Goal:** `normalize_address("Calle Mayor, 28013 Madrid")` → structured `{ via_type, via_name, provincia, municipio, CP, codes }` via MCP, powered by Upstash Redis Search.
 
-- [ ] Define `SEARCH.CREATE` schema (TEXT fields with WEIGHT 5/3/1/1, KEYWORD filters, Spanish stemmer)
-- [ ] Write bulk-import (JSONL → Redis JSON via `JSON.SET` pipeline)
-- [ ] Create `packages/mcp/` with stdio MCP server
-  - `normalize_address(text)` — single best match
-  - `search_addresses(query, filters?)` — ranked matches
-- [ ] Rewrite `packages/core/src/search.ts` to use Upstash Redis Search client
-- [ ] All 86 tests pass with Redis backend
+- [x] Define `FT.CREATE` schema (TEXT fields with WEIGHT 5/3/1/1, TAG exact-match filters)
+- [x] Write bulk-import (JSONL/gzip → HSET via REST pipeline; local RESP variant in `scripts/redis-import-verify.ts`)
+- [x] Create `packages/mcp/` with stdio MCP server (minimal JSON-RPC, no SDK dep)
+  - `normalize_address(text)` — single best match (house-number stripping for OCR input)
+  - `search_addresses(query, filters?)` — ranked matches with municipio grouping
+- [x] Upstash Redis Search client in `packages/upstash/src/client.ts` (zero-dep fetch; REST path pending live cloud test)
+- [x] Local backend: `docker-compose.yml` (redis-stack-server, RediSearch module), 749K docs imported & verified
+- [ ] Flip `@spain-address/core` default backend from Typesense to Upstash
+- [ ] Test REST client against real Upstash Cloud credentials (or decide local-first is the ship target)
+- [ ] Optional: improve multi-word OCR recall (OR'd fuzzy terms or prefix operators)
 
-### Phase 4: Docker + Demo
+### Phase 4: Docker + Demo (partially started)
 
-- [ ] `Dockerfile` for MCP server
-- [ ] `docker-compose.yml` (MCP server + Upstash Redis Search local)
+- [x] `docker-compose.yml` for the RediSearch backend (named volume, healthcheck)
+- [ ] `Dockerfile` for MCP server + compose service wiring
 - [ ] Claude Desktop / Cursor config examples in README
-- [ ] One-command demo: `docker compose up && echo '{"text":"Calle Mayor, Madrid"}' | node mcp-server.js`
+- [ ] One-command demo: `docker compose up && echo '{"text":"Calle Mayor, Madrid"}' | spain-address-mcp`
 
 ### Phase 5: CI/CD
 
@@ -225,13 +236,17 @@ git clone https://github.com/Karim-capatlas/spain-address-autocomplete
 cd spain-address-autocomplete
 pnpm install
 
-# 2. Verify (current state — no Docker needed)
-pnpm typecheck    # 6 packages, green
-pnpm test         # 86 tests, passing
-pnpm build        # 5 packages, builds
+# Verify (Phase 0–3.5 — all green)
+pnpm typecheck    # 8 packages, green
+pnpm test         # 104 tests, passing
+pnpm build        # 8 packages, builds
 
-# 3. (Phase 3.5) Run MCP server against Upstash Redis Search
-#    — see packages/mcp/README.md for Docker setup
+# 3. Local search backend (RediSearch — same engine as Upstash Cloud)
+docker compose up -d redisearch
+pnpm exec tsx scripts/redis-import-verify.ts   # import 749K docs + live verification
+
+# 4. MCP server (stdio JSON-RPC)
+pnpm --filter @spain-address/mcp start
 ```
 
 ---
