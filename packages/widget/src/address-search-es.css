@@ -10,6 +10,8 @@
   --joy-fg-muted: #64748b;
   --joy-shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.08);
   --joy-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --joy-skel: rgba(0, 0, 0, 0.06);
+  --joy-hover-bg: rgba(0, 0, 0, 0.03);
   --joy-radius-input: 10px;
   --joy-radius-menu: 12px;
   --joy-radius-item: 8px;
@@ -30,6 +32,8 @@
   --joy-border: rgba(255, 255, 255, 0.14);
   --joy-border-f: rgb(147 197 255 / 0.45);
   --joy-shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --joy-skel: rgba(255, 255, 255, 0.12);
+  --joy-hover-bg: rgba(255, 255, 255, 0.06);
 }
 * { box-sizing: border-box; }
 
@@ -100,7 +104,7 @@
 .aes.open .aes-skel-area { display: block; }
 .skel-row { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.4rem; }
 .skel-row:last-child { margin-bottom: 0; }
-.skel-line { height: 12px; background: rgba(0, 0, 0, 0.06); border-radius: 6px;
+.skel-line { height: 12px; background: var(--joy-skel); border-radius: 6px;
   animation: aes-pulse 1.25s ease-in-out infinite; }
 .skel-line.lab { width: 88% }
 .skel-line.sub { width: 50% }
@@ -139,7 +143,7 @@
   transition: background 0.1s, color 0.12s; border: 1px solid transparent;
   position: relative;
 }
-.aes-item:hover { background: rgba(0, 0, 0, 0.03); }
+.aes-item:hover { background: var(--joy-hover-bg); }
 .aes-item.hi { background: rgb(var(--joy-primary) / 0.08); border-color: rgb(var(--joy-primary) / 0.18); }
 .aes-item:focus-visible { outline: 2px solid rgb(var(--joy-primary)); outline-offset: 1px; }
 .aes-item .aes-label { font-weight: 500; font-size: 0.9rem; }

@@ -9,7 +9,15 @@
  * grouped by `municipio`, a 5-digit query routes to `filter_by cp`, and groups
  * are capped by `maxGroups` / expandable.
  */
-import { Component, Prop, State, Event, EventEmitter, Element } from '@stencil/core'
+import {
+  Component,
+  Prop,
+  State,
+  Event,
+  EventEmitter,
+  Element,
+  Method,
+} from '@stencil/core'
 // `h` is the JSX factory; the sandbox compiler's `syntheticRender` h-injection is
 // dormant, so we import it from the non-public `@stencil/core/internal/client`
 // subpath — rollup inlines+renames the real factory and links render() to it.
@@ -306,7 +314,14 @@ export class AddressSearchEs {
     }
   }
 
-  private onClear = (): void => {
+  /** ==== Public imperative API (host-facing) ====
+   *  Exposed via `@Method` so host frameworks can drive the widget without DOM
+   *  poking its internals:
+   *    await el.clear()
+   *    const picked = await el.getSelection()
+   */
+  @Method()
+  async clear(): Promise<void> {
     this.query = ''
     this.clearResults()
     this.selected = null
@@ -314,6 +329,29 @@ export class AddressSearchEs {
     this.focused = -1
     this.addressCleared.emit()
     this.input?.focus()
+  }
+
+  @Method()
+  async getSelection(): Promise<AddressRecord | null> {
+    return this.selected
+  }
+
+  /** Host-driven set/clear of the current selection (complements `clear()`). */
+  @Method()
+  async setSelection(record: AddressRecord | null): Promise<void> {
+    this.selected = record
+    if (record) {
+      this.query = record.label ?? ''
+    } else {
+      this.query = ''
+    }
+    this.clearResults()
+    this.open = false
+    this.focused = -1
+  }
+
+  private onClear = (): void => {
+    void this.clear()
   }
 
   private onUnselect = (): void => {
@@ -555,7 +593,7 @@ export class AddressSearchEs {
               ▾
             </span>
           </div>
-          <div class="aes-children">
+          <ul class="aes-children" role="presentation">
             {g.items.map((it, i) => {
               const navItem: NavNode = { kind: 'item', g: gi, i }
               return (
@@ -578,7 +616,7 @@ export class AddressSearchEs {
                 </li>
               )
             })}
-          </div>
+          </ul>
         </div>
       )
     })

@@ -60,4 +60,55 @@ test.describe('address-search-es widget', () => {
     )
     await expect(page.locator('address-search-es >> button[aria-label*="Quitar"]')).toBeVisible()
   })
+
+  test('public clear() empties the listbox and input (host imperative API)', async ({ page }) => {
+    const box = page.locator('address-search-es')
+    const input = box.locator('#aes-input')
+    await input.fill('Calle Mayor')
+    await page.waitForSelector('address-search-es >> .aes-group', { timeout: 10000 })
+
+    // Hosts must be able to reset the widget without poking its internals.
+    // Stencil @Method returns a Promise — Playwright awaits the returned promise.
+    await box.evaluate((el: Element) =>
+      (el as unknown as { clear: () => Promise<void> }).clear(),
+    )
+    await expect(box.locator('.aes-group')).toHaveCount(0)
+    await expect(input).toHaveValue('')
+  })
+
+  test('host can set + clear the selection via the imperative API', async ({ page }) => {
+    const box = page.locator('address-search-es')
+    const input = box.locator('#aes-input')
+    const setSelection = (record: unknown) =>
+      box.evaluate(
+        (el: Element, r: unknown) =>
+          (el as unknown as { setSelection: (r: unknown) => Promise<void> }).setSelection(r),
+        record,
+      )
+
+    const fake = {
+      id: 'test-1',
+      via_nombre: 'Mayor',
+      via_tipo: 'Calle',
+      via_nombre_completo: 'Calle Mayor',
+      municipio: 'Madrid',
+      municipio_id: '28079',
+      provincia: 'Madrid',
+      provincia_id: '28',
+      comunidad_autonoma: 'Comunidad de Madrid',
+      comunidad_autonoma_id: '13',
+      codigo_postal: '28013',
+      label: 'Calle Mayor, Madrid (28013)',
+    }
+
+    await setSelection(fake)
+    // Selection surfaces as an inline chip and the input mirrors the label.
+    await expect(box.locator('.aes-selected-label')).toHaveText('Calle Mayor, Madrid (28013)')
+    await expect(input).toHaveValue('Calle Mayor, Madrid (28013)')
+
+    // A null selection clears the chip + input, same as clear().
+    await setSelection(null)
+    await expect(box.locator('.aes-selected-chip')).toHaveCount(0)
+    await expect(input).toHaveValue('')
+  })
 })
