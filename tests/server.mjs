@@ -11,7 +11,9 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { serve } from '@hono/node-server'
+// Resolved from packages/proxy's deps (root has no direct @hono/node-server dep
+// under pnpm's strict layout) — createProxyApp only needs `hono` at runtime,
+// which is bundled into proxy dist. We build the delegate by hand instead:
 import { createProxyApp } from '../packages/proxy/dist/index.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -30,8 +32,17 @@ const proxyApp = createProxyApp()
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`)
   if (url.pathname.startsWith('/api/') || url.pathname === '/health') {
-    // Delegate to the Hono proxy app
-    const proxied = await proxyApp.request(new Request(url, { headers: req.headers }))
+    // Delegate to the Hono proxy app. Convert Node's IncomingHttpHeaders
+    // (values may be string[] | undefined) into a fetch HeadersInit.
+    const headers = new Headers()
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (Array.isArray(value)) {
+        for (const v of value) headers.append(key, String(v))
+      } else if (value != null) {
+        headers.set(key, String(value))
+      }
+    }
+    const proxied = await proxyApp.request(new Request(url, { headers }))
     res.writeHead(proxied.status, Object.fromEntries(proxied.headers))
     res.end(await proxied.text())
     return
