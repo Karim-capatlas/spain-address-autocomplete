@@ -130,7 +130,14 @@ async function main(): Promise<void> {
       failed++
       continue
     }
-    batch.push(['HSET', `callejero:${id}`, 'data', line])
+    // Store each record as FLAT hash fields — NOT JSON under a single `data`
+    // key — so that `search.ts`'s `toAddressRecord` can read them directly
+    // (it decodes flat [field, value] pairs, not a JSON blob). This matches the
+    // storage format used by `scripts/redis-import-verify.ts`, keeping the REST
+    // and RESP import paths coherent.
+    const fields: string[] = []
+    for (const [k, v] of Object.entries(record)) fields.push(k, v == null ? '' : String(v))
+    batch.push(['HSET', `callejero:${id}`, ...fields])
     batch.push([
       'SADD',
       `callejero:municipios`,
