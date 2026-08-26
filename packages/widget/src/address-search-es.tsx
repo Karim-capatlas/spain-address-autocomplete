@@ -41,6 +41,14 @@ export class AddressSearchEs {
   private input?: HTMLInputElement
   private debounceHandle: ReturnType<typeof setTimeout> | undefined
   private collapsed = new Set<string>() // municipio_id -> collapsed
+  /** Monotonic search counter: responses from stale queries are discarded. */
+  private searchSeq = 0
+  /** AbortController for the in-flight search (proxy fetch + direct client). */
+  private abortCtrl: AbortController | undefined
+  /** Current result cap (starts at `maxGroups`, grows via "Ver todo"). */
+  private limit = 0
+  /** Last accepted selection (drives the confirmation chip). */
+  @State() selected: AddressRecord | null = null
 
   /* ===== observed attributes (public API) ===== */
   /**
@@ -121,17 +129,25 @@ export class AddressSearchEs {
     const url = new URL(this.endpoint, window.location.href)
     url.searchParams.set('q', cp ? '' : q)
     if (cp) url.searchParams.set('cp', q)
-    url.searchParams.set('per_page', String(this.maxGroups))
+    url.searchParams.set('per_page', String(this.effectiveLimit()))
     url.searchParams.set('group_limit', String(this.groupLimit))
     if (this.scopeProvincia) url.searchParams.set('provincia', this.scopeProvincia)
     const municipio = this.scopeMunicipalidad()
     if (municipio) url.searchParams.set('municipio', municipio)
-    const res = await fetch(url.toString(), { headers: { accept: 'application/json' } })
+    const res = await fetch(url.toString(), {
+      headers: { accept: 'application/json' },
+      signal: this.abortCtrl?.signal,
+    })
     if (!res.ok) {
       const body = await res.text().catch(() => '')
       throw Object.assign(new Error(`proxy ${res.status}: ${body.slice(0, 200)}`), { status: res.status })
     }
     return (await res.json()) as SearchResult
+  }
+
+  /** Current result cap: `limit` once "Ver todo" has grown it, else `maxGroups`. */
+  private effectiveLimit(): number {
+    return this.limit > 0 ? this.limit : this.maxGroups
   }
 
   private async doSearch(): Promise<void> {
@@ -141,25 +157,30 @@ export class AddressSearchEs {
       this.open = false
       return
     }
+    // Cancel any in-flight request and bump the sequence — only the newest
+    // search may commit its results (autocomplete race guard).
+    this.abortCtrl?.abort()
+    this.abortCtrl = new AbortController()
+    const seq = ++this.searchSeq
+    const isCurrent = (): boolean => seq === this.searchSeq
+    const aborted = (e: unknown): boolean =>
+      e instanceof DOMException && e.name === 'AbortError'
+
     const cp = this.detectCp && this.isFiveDigits(q)
     let result: SearchResult
-    if (this.endpoint) {
-      try {
+    try {
+      if (this.endpoint) {
+        // Proxy mode — fetch() already honours abortCtrl via searchViaEndpoint.
+        this.loading = true
         result = await this.searchViaEndpoint(cp, q)
-      } catch (e: unknown) {
-        this.handleError(e)
-        return
-      }
-    } else {
-      const client = this.client()
-      if (!client) return
-      this.loading = true
-      this.errorMsg = ''
-      try {
+      } else {
+        const client = this.client()
+        if (!client) return
+        this.loading = true
         result = await searchAddresses(
           {
             query: cp ? '' : q,
-            perPage: this.maxGroups,
+            perPage: this.effectiveLimit(),
             groupLimit: this.groupLimit,
             filterByCP: cp ? q : undefined,
             filterByProvincia: this.scopeProvincia || undefined,
@@ -169,18 +190,25 @@ export class AddressSearchEs {
           },
           { client },
         )
-      } catch (e: unknown) {
-        this.handleError(e)
-        return
-      } finally {
-        this.loading = false
       }
+    } catch (e: unknown) {
+      if (!aborted(e)) this.handleError(e)
+      return
+    } finally {
+      if (isCurrent()) this.loading = false
     }
+    if (!isCurrent()) return // a newer search superseded this one
     this.groups = result.groups
     this.total = result.total
     this.open = true
     this.focused = result.groups.length ? 0 : -1
     this.errorMsg = ''
+  }
+
+  /** "Ver todo": grow the cap to the full match count and re-search. */
+  private loadMore(): void {
+    this.limit = Math.min(this.total, 50)
+    void this.doSearch()
   }
 
   private handleError(e: unknown): void {
@@ -281,10 +309,16 @@ export class AddressSearchEs {
   private onClear = (): void => {
     this.query = ''
     this.clearResults()
+    this.selected = null
     this.open = false
     this.focused = -1
     this.addressCleared.emit()
     this.input?.focus()
+  }
+
+  private onUnselect = (): void => {
+    this.selected = null
+    this.addressCleared.emit()
   }
 
   private onUnscope = (): void => {
@@ -294,12 +328,9 @@ export class AddressSearchEs {
     void this.doSearch()
   }
 
-  private onVerTodo = (): void => {
-    window.alert('En la app real: abrir resultados completos (paginación).')
-  }
-
   private selectItem(item: AddressRecord): void {
     this.addressSelected.emit(item)
+    this.selected = item
     this.query = ''
     this.clearResults()
     this.open = false
@@ -392,6 +423,22 @@ export class AddressSearchEs {
           </button>
         </div>
 
+        {this.selected ? (
+          <div class="aes-selected-chip" role="status">
+            <span class="aes-selected-check" aria-hidden="true">
+              ✓
+            </span>
+            <span class="aes-selected-label">{this.selected.label}</span>
+            <button
+              aria-label="Quitar dirección seleccionada"
+              type="button"
+              onClick={this.onUnselect}
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
+
         {this.scopeProvincia ? (
           <div class="aes-scope-chip">
             <span>📍 {this.scopeProvincia}</span>
@@ -400,6 +447,12 @@ export class AddressSearchEs {
             </button>
           </div>
         ) : null}
+
+        <div
+          class="aes-status aes-sr"
+          role="status"
+          aria-live="polite"
+        >{this.open ? `${this.total} resultados` : ''}</div>
 
         <div class="aes-menu" id="aes-menu" role="listbox" aria-hidden={!this.open} tabIndex={-1}>
           {this.errorMsg ? (
@@ -421,7 +474,7 @@ export class AddressSearchEs {
                 Mostrando los {count} primeros de {this.total}
                 {cpMode ? ' (CP)' : ''}
               </span>
-              <button type="button" onClick={this.onVerTodo}>
+              <button type="button" onClick={() => this.loadMore()}>
                 Ver todo
               </button>
             </div>

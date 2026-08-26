@@ -8,7 +8,7 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: 'python3 -m http.server 8000 --bind 127.0.0.1',
+    command: 'node tests/server.mjs',
     url: 'http://127.0.0.1:8000/examples/vanilla.html',
     timeout: 5000,
     reuseExistingServer: true,

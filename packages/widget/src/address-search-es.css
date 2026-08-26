@@ -146,7 +146,22 @@
 .aes-item .aes-sub { font-size: 0.8rem; color: var(--joy-fg-muted); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
 mark { background: transparent; color: inherit; font-weight: 700; }
-.joy-mark { color: rgb(var(--joy-primary)); font-weight: 700; }
+.aes-item mark, .aes-item .aes-label mark { color: rgb(var(--joy-primary)); }
+
+/* selected confirmation chip */
+.aes-selected-chip {
+  display: flex; align-items: center; gap: 0.4rem; margin-top: 0.35rem;
+  background: rgb(34 197 94 / 0.08); border: 1px solid rgb(34 197 94 / 0.3);
+  border-radius: var(--joy-radius-item); padding: 0.3rem 0.6rem;
+  font-size: 0.8rem; color: var(--joy-fg);
+}
+.aes-selected-check { color: rgb(22 163 74); font-weight: 700; }
+.aes-selected-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aes-selected-chip button {
+  margin-left: auto; border: 0; background: transparent; color: var(--joy-fg-muted);
+  cursor: pointer; font-size: 0.9rem; line-height: 1; padding: 0.1rem;
+}
+.aes-selected-chip button:hover { color: var(--joy-fg); }
 
 .aes-empty { padding: 1rem; text-align: center; color: var(--joy-fg-muted); font-size: 0.85rem; }
 

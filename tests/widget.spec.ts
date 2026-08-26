@@ -46,4 +46,18 @@ test.describe('address-search-es widget', () => {
     await page.locator('address-search-es >> .aes-clear').click()
     await expect(page.locator('address-search-es >> .aes-group')).toHaveCount(0)
   })
+
+  test('address selection shows a confirmation chip', async ({ page }) => {
+    const input = page.locator('address-search-es >> #aes-input')
+    await input.fill('Calle Mayor')
+    await page.waitForSelector('address-search-es >> .aes-group', { timeout: 10000 })
+
+    await page.locator('address-search-es >> .aes-item').first().click()
+    // Chip carries the selected address label + remove affordance
+    await expect(page.locator('address-search-es >> .aes-selected-label')).toBeVisible()
+    await expect(page.locator('address-search-es >> .aes-selected-label')).toHaveText(
+      /Calle Mayor/,
+    )
+    await expect(page.locator('address-search-es >> button[aria-label*="Quitar"]')).toBeVisible()
+  })
 })
