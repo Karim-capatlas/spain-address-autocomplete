@@ -1,0 +1,30 @@
+# Local search backend for Phase 3.5 (Upstash Redis Search migration).
+#
+# `redis-stack-server` ships the RediSearch module — the same engine Upstash
+# Cloud runs — so the local index behaves identically to production.
+#
+# Usage:
+#   docker-compose up -d redisearch        # start
+#   pnpm upstash:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
+#   pnpm exec tsx scripts/redis-import-verify.ts   # import + live verification
+#
+# Note: this machine has the legacy `docker-compose` binary (no `docker compose`
+# v2 plugin) — use `docker-compose`, not `docker compose`.
+
+services:
+  redisearch:
+    image: redis/redis-stack-server:latest
+    container_name: redisearch
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redisearch-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'PING']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redisearch-data:
