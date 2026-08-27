@@ -32,6 +32,12 @@ Spain's **SES.HOSPEDAJES** requirements.
   │    provincia, municipio, CP }   │                             │
 ```
 
+**Two servers in one repo:** the MCP server (above) handles fuzzy street-level
+address normalization. The **cascade server** (`packages/cascade/`) handles the
+provincia→municipio→código postal dropdown cascade the DNI/TIE form needs —
+replacing the external `geoapi.es` router with a local RediSearch index
+(`cascade_es`) built from the same 749K-record INE snapshot.
+
 ## Tools (MCP)
 
 | Tool | Description |
@@ -47,13 +53,17 @@ git clone https://github.com/Karim-capatlas/spain-address-autocomplete
 cd spain-address-autocomplete
 pnpm install
 
-# Verify (Phase 0-3 + 3.5 code — all green)
-pnpm typecheck    # 8 packages, green
-pnpm test         # 104 tests, passing
-pnpm build        # 8 packages, builds
+# Verify (Phase 0-3 + 3.5 + cascade — all green)
+pnpm typecheck    # 9 packages, green
+pnpm test         # 132 tests (12 files), passing
+pnpm build        # 9 packages, builds
 
 # MCP server (Phase 3.5) — stdio JSON-RPC
 pnpm --filter @spain-address/mcp start
+
+# Cascade server (provincia → municipio → CP dropdown)
+pnpm cascade:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
+pnpm --filter @spain-address/cascade start   # → localhost:5978/api/geo/provincias
 
 # Load a snapshot into Upstash Redis Search (needs UPSTASH_REDIS_REST_URL/TOKEN)
 pnpm upstash:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
@@ -70,8 +80,10 @@ See [ROADMAP.md](./ROADMAP.md) for the phased plan:
 - Phase 0-3 (done): ETL pipeline, Typesense schema, Stencil widget
 - Phase 3.5 (code done, live-verified): Upstash Redis Search migration + MCP server —
   `normalize_address` / `search_addresses` served over stdio, 749K docs running in a local
-  RediSearch container (`docker compose up -d redisearch`)
-- Next: flip core's default backend to Redis Search; Dockerfile for the MCP server
+  RediSearch container (`docker compose up -d redisearch`). Also: `packages/cascade/` —
+  standalone Hono server replacing `geoapi.es` for the provincia→municipio→CP cascade
+  (52 provincias, ~8.1K municipios, 10,127 CPs).
+- Done: core's default backend flipped to Upstash (`createSearchClient()` prefers Upstash REST); Dockerfile for cascade server done
 - Then: CI/CD, npm publish, docs + blog post
 
 ## License

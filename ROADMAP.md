@@ -26,7 +26,7 @@
 - [x] Fix `package.json` (name, description, license, author, repo)
 - [x] Fix pre-existing proxy test failure (non-deterministic `took_ms`, mismatched mock)
 
-**Success:** Repo is live at https://github.com/Karim-capatlas/spain-address-autocomplete — 86 tests passing, typecheck green, lint clean.
+**Success:** Repo is live at https://github.com/Karim-capatlas/spain-address-autocomplete — 132 tests passing, typecheck green, lint clean.
 
 ---
 
@@ -38,8 +38,11 @@
 - [x] Write bulk-import script (JSONL/gzip → HSET; REST CLI + local RESP variant in `scripts/redis-import-verify.ts`)
 - [x] Write `packages/mcp/` MCP server with `normalize_address` tool (+ `search_addresses`)
 - [x] Upstash Redis Search backend implemented (`packages/upstash/src/{client,search}.ts`) alongside Typesense
-- [x] All 104 tests pass; live-verified against a local RediSearch container with the full 749K-record dataset
-- [ ] Flip `@spain-address/core` default to the Redis Search backend
+- [x] All 132 tests pass; live-verified against a local RediSearch container with the full 749K-record dataset
+- [x] **Cascade server** (`packages/cascade/`) — standalone Hono app replacing the external
+  `geoapi.es` router; dedicated `cascade_es` index (52 provincias, ~8.1K municipios,
+  10,127 CPs) derived from the same INE snapshot; 4 endpoints live-verified
+- [x] Flip `@spain-address/core` default to the Redis Search backend (`createSearchClient()` prefers Upstash, falls back to Typesense)
 - [ ] Optional: verify the REST client path with real Upstash Cloud credentials
 
 **Success:** Standalone MCP server normalizes address strings using the real 749K-record dataset. ✅ Achieved locally (`docker compose up -d redisearch` → `pnpm --filter @spain-address/mcp start`).
@@ -63,8 +66,9 @@
 
 **Goal:** Anyone can run the MCP server with one command; publicly discoverable.
 
-- [ ] `Dockerfile` for MCP server
-- [ ] `docker-compose.yml` (MCP + Redis Search)
+- [x] `docker-compose.yml` for the RediSearch backend (named volume, healthcheck)
+- [x] `Dockerfile` for cascade server + compose service (port 3001→5978)
+- [ ] `Dockerfile` for MCP server + compose service wiring
 - [ ] GitHub Actions CI (lint + test + build)
 - [ ] Publish to npm (optional)
 - [ ] Blog post: "MCP + Upstash for Spanish ID OCR"

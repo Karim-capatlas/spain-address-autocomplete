@@ -1,0 +1,62 @@
+{
+  "name": "@spain-address/cascade",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Standalone provincia → municipio → código postal cascade server — replaces the external geoapi.es router with a local RediSearch index (cascade_es).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./generator": {
+      "types": "./dist/generator.d.ts",
+      "import": "./dist/generator.js"
+    },
+    "./import": {
+      "types": "./dist/import.d.ts",
+      "import": "./dist/import.js"
+    },
+    "./redis": {
+      "types": "./dist/redis.d.ts",
+      "import": "./dist/redis.js"
+    },
+    "./schema": {
+      "types": "./dist/schema.d.ts",
+      "import": "./dist/schema.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "spain-address-cascade": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/redis.ts src/schema.ts src/generator.ts src/import.ts src/cli.ts --format esm --dts",
+    "import": "tsx src/import.ts",
+    "dev": "tsx watch src/cli.ts",
+    "start": "tsx src/cli.ts",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

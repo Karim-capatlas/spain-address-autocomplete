@@ -18,18 +18,19 @@ addresses from Spanish identity cards in-browser and normalizes them via MCP.
 
 - **Stack:** TypeScript (strict) · ESM · pnpm 9 workspaces · Turborepo · TS 5.5 / Node 22 · Vitest 2 · tsup · ESLint (flat) · Prettier (`singleQuote`, no semis)
 - **Data:** INE Callejero (`caj_esp_*.zip`) — 749,261 streets across 52 provinces, sourced from open government data
+- **Search:** Upstash Redis Search (Phase 3.5) for street-level fuzzy address normalization; local `cascade_es` RediSearch index for the provincia→municipio→CP dropdown cascade — both derived from the same INE snapshot
 - **Current migration:** Typesense → **Upstash Redis Search** (Phase 3.5), with a new `packages/mcp/` MCP server wrapping `searchAddresses()` as `normalize_address` + `search_addresses` tools
-- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, 119 tests green, 749K docs indexed & searched in a local RediSearch container (`docker-compose.yml`); core's `searchAddresses` default flipped to Upstash (`createSearchClient()` prefers Upstash REST → Typesense fallback; Upstash Cloud REST is unit-tested only — no creds locally, live verification via local RediSearch/RESP)
+- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, 132 tests green, 749K docs indexed & searched in a local RediSearch container (`docker-compose.yml`); core's `searchAddresses` default flipped to Upstash (`createSearchClient()` prefers Upstash REST → Typesense fallback; Upstash Cloud REST is unit-tested only — no creds locally, live verification via local RediSearch/RESP) · **`packages/cascade/` ✅ done & live-verified** — standalone Hono server replacing the `geoapi.es` provincia→municipio→CP router, backed by a dedicated `cascade_es` RediSearch index built from the same INE snapshot (52 provincias, ~8.1K municipios, 10,127 CPs)
 
 ## Toolchain status (GREEN — do not regress)
 
 Verified end-to-end on this machine:
 
 ```
-pnpm typecheck   # 8/8 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
-pnpm lint        # 7/7 tasks, 0 errors
-pnpm build       # 8/8 tasks — widget included (`packages/widget`)
-pnpm test        # 104 tests pass (10 files)
+pnpm typecheck   # 9/9 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
+pnpm lint        # 8/8 tasks, 0 errors
+pnpm build       # 9/9 tasks — widget + cascade included
+pnpm test        # 132 tests pass (12 files)
 ```
 
 - Root `vitest.config.ts` (`include: packages/**/src/**/*.{test,spec}.*`, v8, thresholds 0.8)
@@ -256,6 +257,7 @@ Search (via `searchAddresses` against the built core):
 | `packages/react` | **Superseded** — replaced by the Stencil‑generated React target (`@spain-address/widget/react`) | n/a |
 | `packages/upstash` | **Upstash Redis Search** — FT.CREATE schema (`schema.ts`, TEXT weights 5/3/1/1 + TAG filters) + bulk-import CLI; query primitives/REST client now live in `@spain-address/core` and are re-exported here for backward compat (`search.ts`/`client.ts`) | ✅ Phase 3.5 done |
 | `packages/mcp` | **MCP server** — stdio JSON-RPC (`initialize`/`tools/list`/`tools/call`); `normalize_address` + `search_addresses` tools over `@spain-address/core` via `createSearchClient()` (Upstash default) | ✅ Phase 3.5 done (live-verified) |
+| `packages/cascade` | **Cascade server** — standalone Hono app (`GET /api/geo/provincias`, `/municipios`, `/cps`, `/validate-cp`) backed by a dedicated `cascade_es` RediSearch index (52 provincias, ~8.1K municipios, 10,127 CPs). Replaces the external `geoapi.es` router with local sub-ms lookups; transport is ioredis/RESP (works with both local redis-stack and Upstash Cloud RESP endpoint). Import CLI (`pnpm cascade:import`) derives docs from the same ETL snapshot in one pass. | ✅ Live-verified
 
 #### Phase 3.5 implementation notes (do not rediscover)
 
@@ -293,10 +295,10 @@ Search (via `searchAddresses` against the built core):
 
 ```bash
 pnpm install
-pnpm typecheck      # 6/6
+pnpm typecheck      # 9/9
 pnpm lint           # 0 errors
-pnpm build          # 5/5
-pnpm test           # 86 tests
+pnpm build          # 9/9
+pnpm test           # 132 tests (12 files)
 
 # ETL
 pnpm exec tsx packages/etl/src/index.ts run   --year 2026 --month 1 --provinces 28 \

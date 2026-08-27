@@ -22,6 +22,9 @@ This repo provides:
 - **Search layer** — Upstash Redis Search (migrating from Typesense) with `$fuzzy`
   / `$smart` typo tolerance for OCR noise
 - **MCP interface** — stdio MCP server exposing `normalize_address` + `search_addresses` tools
+- **Cascade interface** — Hono HTTP server (`packages/cascade/`) replacing the
+  external `geoapi.es` router, serving the provincia→municipio→CP dropdown
+  cascade from a dedicated `cascade_es` RediSearch index derived from the same INE snapshot
 - **Widget (legacy)** — Stencil Web Component (`packages/widget`) for direct browser integration
 
 ---
@@ -58,44 +61,31 @@ client-side. An **MCP server** provides the ideal bridge:
 ## 3. Solution Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│              DNI/TIE OCR PIPELINE (Parent Project)       │
-│                                                          │
-│  [Browser]                                               │
-│   PaddleV6 + WebGPU                                      │
-│   (identity card image)                                  │
-│       │                                                  │
-│       ▼                                                  │
-│   OCR-extracted text:                                    │
-│   "Calle Mayor, 28013 Madrid"                            │
-│       │                                                  │
-│       ▼ (MCP stdio call)                                 │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ packages/mcp/    ← THIS REPO (MCP SERVER)          │  │
-│  │  normalize_address("Calle Mayor, 28013 Madrid")   │  │
-│  │  → calls →                                        │  │
-│  │  searchAddresses()  (packages/core)              │  │
-│  │  → queries →                                      │  │
-│  └─────────────────┬──────────────────────────────────┘  │
-│                    ▼                                     │
-│  ┌────────────────────────────────────────────────────┐  │
-│  │ Upstash Redis Search                                │  │
-│  │  - 749,261 records                                 │  │
-│  │  - $fuzzy / $smart for OCR typo tolerance            │  │
-│  │  - WEIGHT on via_nombre (5) > via_nombre_completo (3) │  │
-│  │  - KEYWORD filters: provincia_id, municipio_id, CP  │  │
-│  │  - AGGREGATE for municipio grouping                 │  │
-│  └─────────────────┬──────────────────────────────────┘  │
-│                    │                                     │
-│                    ▼                                     │
-│  Structured result:                                    │
-│  { via_type: "Calle",                              │
-│    via_name: "Mayor",                              │
-│    provincia: "Madrid", provincia_id: "28",      │
-│    municipio: "Madrid", municipio_id: "28079",   │
-│    codigo_postal: "28013" }                       │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│  DNI/TIE OCR PIPELINE (Parent Project — open-source)           │
+│                                                                │
+│  [Browser]                                                      │
+│   PaddleV6 + WebGPU (identity card image)                      │
+│       │                                                        │
+│       ▼                                                        │
+│   OCR text: "Calle Mayor, 28013 Madrid"                        │
+│       │                                                        │
+│       ├──── (1) MCP stdio call ───► packages/mcp/                │
+│       │    normalize_address("Calle Mayor, 28013 Madrid")       │
+│       │    → @spain-address/core → Upstash/Redis Search         │
+│       │    ←── { via_tipo, via_name, provincia, municipio, CP } │
+│       │                                                        │
+│       └──── (2) HTTP call ───► packages/cascade/                  │
+│          GET /api/geo/provincias                               │
+│          GET /api/geo/municipios?provincia=28                  │
+│          GET /api/geo/cps?municipio=28079                      │
+│          GET /api/geo/validate-cp?municipio=28079&cp=28001     │
+│          → cascade_es (RediSearch, same redis-stack)          │
+│          ←── dropdown options for the form                    │
+│                                                                │
+│  Shared data source: callejero_2026-01.jsonl.gz (749K INE rows) │
+└────────────────────────────────────────────────────────────────┘
+```
 ```
 
 ### Key design decisions
@@ -104,6 +94,8 @@ client-side. An **MCP server** provides the ideal bridge:
 | **MCP over REST API** | No separate server to deploy; callable by any MCP client |
 | **Upstash Redis Search over Typesense** | `$fuzzy` + `$smart` better handles OCR noise; HTTP-native (no TCP); global replicas for low latency |
 | **Redis JSON / Hashes** | Data stored as Redis JSON docs; indexed via `SEARCH.CREATE` with Tantivy text analyzer + Spanish stemmer |
+| **Separate cascade index** | The provincia→municipio→CP dropdown needs only provincia/municipio/CP data — not the full 749K street index. A dedicated `cascade_es` index (~18K docs) is far cheaper to query and keeps the dropdown fast. |
+| **RESP transport for cascade** | The cascade server uses `ioredis` (RESP) rather than the Upstash REST client, so it runs against the local redis-stack with no Upstash credentials. Upstash Cloud's RESP endpoint (`rediss://…:6380`) is also reachable over the same code path. |
 | **Offline-capable** | Docker Compose bundles Redis Search locally; no external API calls |
 | **Stencil widget kept** | As a legacy/secondary integration for direct browser use |
 
@@ -122,7 +114,13 @@ client-side. An **MCP server** provides the ideal bridge:
 - **Phase 3.5 (live verification)** — 749,261 docs indexed into the local
   redis-stack container in ~209 s; searches verified against the Typesense
   baseline ("Gran Vía" → 134 national; CP-28013 filter → exactly `Calle Mayor,
-  Madrid`). Toolchain: typecheck 8/8 · lint 0 errors · build 8/8 · **104 tests pass**
+  Madrid`). Toolchain: typecheck 9/9 · lint 0 errors · build 9/9 · **132 tests pass (12 files)**
+- **Cascade server (live-verified)** — `packages/cascade/` Hono app replaces the
+  external `geoapi.es` router for the provincia→municipio→CP form dropdown. Dedicated
+  `cascade_es` RediSearch index: 52 provincias, ~8.1K municipios, 10,127 CPs derived
+  from the same INE snapshot in one pass (`pnpm cascade:import`). All 4 endpoints
+  verified live: 52 provinces · 179 municipios for Madrid · 58 CPs for Madrid city
+  · `validate-cp` correct on valid + invalid + unknown CPs. 13 unit tests green.
 
 ### Live state
 - **RediSearch (local):** `docker compose up -d redisearch` → redis-stack container on
@@ -173,13 +171,15 @@ client-side. An **MCP server** provides the ideal bridge:
   - `search_addresses(query, filters?)` — ranked matches with municipio grouping
 - [x] Upstash Redis Search client in `packages/upstash/src/client.ts` (zero-dep fetch; REST path pending live cloud test)
 - [x] Local backend: `docker-compose.yml` (redis-stack-server, RediSearch module), 749K docs imported & verified
-- [ ] Flip `@spain-address/core` default backend from Typesense to Upstash
+- [x] Cascade server (`packages/cascade/`) — Hono app + `cascade_es` index for provincia→municipio→CP dropdown, replacing `geoapi.es`
+- [x] Flip `@spain-address/core` default backend from Typesense to Upstash (`createSearchClient()` prefers Upstash REST when `UPSTASH_REDIS_REST_URL`/`TOKEN` are set, falls back to Typesense)
 - [ ] Test REST client against real Upstash Cloud credentials (or decide local-first is the ship target)
 - [ ] Optional: improve multi-word OCR recall (OR'd fuzzy terms or prefix operators)
 
 ### Phase 4: Docker + Demo (partially started)
 
 - [x] `docker-compose.yml` for the RediSearch backend (named volume, healthcheck)
+- [x] `Dockerfile` for cascade server + compose service
 - [ ] `Dockerfile` for MCP server + compose service wiring
 - [ ] Claude Desktop / Cursor config examples in README
 - [ ] One-command demo: `docker compose up && echo '{"text":"Calle Mayor, Madrid"}' | spain-address-mcp`
@@ -237,9 +237,9 @@ cd spain-address-autocomplete
 pnpm install
 
 # Verify (Phase 0–3.5 — all green)
-pnpm typecheck    # 8 packages, green
-pnpm test         # 104 tests, passing
-pnpm build        # 8 packages, builds
+pnpm typecheck    # 9 packages, green
+pnpm test         # 132 tests (12 files), passing
+pnpm build        # 9 packages, builds
 
 # 3. Local search backend (RediSearch — same engine as Upstash Cloud)
 docker compose up -d redisearch
@@ -247,6 +247,10 @@ pnpm exec tsx scripts/redis-import-verify.ts   # import 749K docs + live verific
 
 # 4. MCP server (stdio JSON-RPC)
 pnpm --filter @spain-address/mcp start
+
+# 5. Cascade server (provincia → municipio → CP dropdown)
+pnpm cascade:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
+pnpm --filter @spain-address/cascade start   # → localhost:5978/api/geo/provincias
 ```
 
 ---
