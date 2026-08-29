@@ -4,6 +4,8 @@
 
 > **Privacy-first Spanish ID address extraction: OCR a DNI/TIE card in-browser → normalize the address via MCP → structured fields (via, municipio, provincia, CP) — powered by Upstash Redis Search at 749K-record scale.**
 
+> **Numbering note:** this file is the weekly ship plan (Week 1 → 5+). The engineering phase numbers used in commits and the other docs — Phase 0–3 (bootstrap/ETL/Typesense/widget), Phase 3.5 (Upstash + MCP) — are tracked in [PRODUCT.md](./PRODUCT.md) §5.
+
 ## Guardrails ("Road-Rails")
 
 | Rule                         | What it means                                                       |
@@ -16,7 +18,7 @@
 
 ---
 
-## Phase 0 (DONE): Repository Setup & Public Foundation
+## Week 1 (DONE): Repository Setup & Public Foundation
 
 **Goal:** Get `spain-address-autocomplete` live and public on GitHub.
 
@@ -30,7 +32,7 @@
 
 ---
 
-## Phase 1 (Week 2): Upstash Redis Search + MCP Server MVP
+## Week 2 (DONE): Upstash Redis Search + MCP Server MVP
 
 **Goal:** `normalize_address("Calle Mayor, Madrid")` → `{ via_type: "Calle", via_name: "Mayor", provincia: "Madrid", ... }`
 
@@ -49,7 +51,7 @@
 
 ---
 
-## Phase 2 (Week 3): DNI/TIE OCR Integration MVP
+## Week 3: DNI/TIE OCR Integration MVP
 
 **Goal:** The parent project calls the MCP server to get structured addresses.
 
@@ -62,7 +64,7 @@
 
 ---
 
-## Phase 3 (Week 4): Docker + Visibility MVP
+## Week 4: Docker + Visibility
 
 **Goal:** Anyone can run the MCP server with one command; publicly discoverable.
 
@@ -77,11 +79,11 @@
 
 ---
 
-## Phase 4+ (Week 5+): Polish & Job Hunt
+## Week 5+: Polish & Portfolio
 
 **Goal:** Portfolio-quality showcase.
 
 - [ ] More test coverage (OCR noise simulation)
 - [ ] Claude Desktop / Cursor config examples in README
 - [ ] Case study for Upstash blog (if accepted)
-- [ ] Portfolio packaging ("Projects" section on resume/personal site)
+- [ ] Portfolio packaging (projects section on personal site)

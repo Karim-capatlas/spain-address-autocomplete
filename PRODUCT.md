@@ -19,8 +19,8 @@ OCR-derived text into structured fields for downstream government reporting.
 
 This repo provides:
 - **Data layer** — ETL pipeline + 749,261-record JSONL snapshot from INE
-- **Search layer** — Upstash Redis Search (migrating from Typesense) with `$fuzzy`
-  / `$smart` typo tolerance for OCR noise
+- **Search layer** — Upstash Redis Search (default; Typesense retained as a
+  fallback) with fuzzy `%term%` typo tolerance for OCR noise
 - **MCP interface** — stdio MCP server exposing `normalize_address` + `search_addresses` tools
 - **Cascade interface** — Hono HTTP server (`packages/cascade/`) replacing the
   external `geoapi.es` router, serving the provincia→municipio→CP dropdown
@@ -86,14 +86,13 @@ client-side. An **MCP server** provides the ideal bridge:
 │  Shared data source: callejero_2026-01.jsonl.gz (749K INE rows) │
 └────────────────────────────────────────────────────────────────┘
 ```
-```
 
 ### Key design decisions
 | Decision | Rationale |
 |---|---|
 | **MCP over REST API** | No separate server to deploy; callable by any MCP client |
-| **Upstash Redis Search over Typesense** | `$fuzzy` + `$smart` better handles OCR noise; HTTP-native (no TCP); global replicas for low latency |
-| **Redis JSON / Hashes** | Data stored as Redis JSON docs; indexed via `SEARCH.CREATE` with Tantivy text analyzer + Spanish stemmer |
+| **Upstash Redis Search over Typesense** | Fuzzy `%term%` matching handles OCR noise better; HTTP-native REST (no TCP); serverless with global replicas |
+| **Redis Hashes + RediSearch** | Records stored as flat Redis hashes (`HSET`); indexed via `FT.CREATE` with TEXT field weights (5/3/1/1) and TAG exact-match filters |
 | **Separate cascade index** | The provincia→municipio→CP dropdown needs only provincia/municipio/CP data — not the full 749K street index. A dedicated `cascade_es` index (~18K docs) is far cheaper to query and keeps the dropdown fast. |
 | **RESP transport for cascade** | The cascade server uses `ioredis` (RESP) rather than the Upstash REST client, so it runs against the local redis-stack with no Upstash credentials. Upstash Cloud's RESP endpoint (`rediss://…:6380`) is also reachable over the same code path. |
 | **Offline-capable** | Docker Compose bundles Redis Search locally; no external API calls |
@@ -154,7 +153,7 @@ client-side. An **MCP server** provides the ideal bridge:
 | 1 | ETL pipeline (INE → JSONL) | ✅ Done & verified |
 | 2 | Search schema + core search function | ✅ Done (Typesense) |
 | 3 | Stencil widget + React wrapper | ✅ Done & built |
-| **3.5** | **Upstash Redis Search migration + MCP server** | 🚧 Code done & live-verified; wrap-up pending |
+| **3.5** | **Upstash Redis Search migration + MCP server** | ✅ Done & live-verified |
 | 4 | Docker Compose + Claude Desktop demo | 🔶 Partially done (search backend composed) |
 | 5 | CI/CD (GitHub Actions) | 🔲 Next |
 | 6 | Docs + blog post | 🔲 Next |
@@ -199,7 +198,7 @@ client-side. An **MCP server** provides the ideal bridge:
 
 ## 6. Search Semantics Reference
 
-**Typesense (current → being migrated):**
+**Typesense (legacy fallback):**
 ```typescript
 query_by: 'via_nombre,via_nombre_completo,municipio,provincia'
 query_by_weights: '5,3,1,1'
@@ -209,9 +208,9 @@ group_by: 'municipio_id'
 group_limit: 3
 ```
 
-**Upstash Redis Search (target):**
+**Upstash Redis Search (current default):**
 ```javascript
-// SEARCH.CREATE
+// FT.CREATE
 TEXT via_nombre WEIGHT 5.0 NOSTEM    // primary
 TEXT via_nombre_completo WEIGHT 3.0 NOSTEM
 TEXT municipio WEIGHT 1.0
@@ -219,9 +218,10 @@ TEXT provincia WEIGHT 1.0
 TAG provincia_id, municipio_id, codigo_postal    // exact-match filters
 LANGUAGE spanish    // Spanish stemmer + stop words
 
-// SEARCH QUERY (for normalize_address)
-@via_nombre:(Calle Mayor) $fuzzy
-// $smart combines phrase + term + fuzzy matching for OCR noise
+// FT.SEARCH (for normalize_address)
+// fuzzy %term% expansion on via_nombre / via_nombre_completo for OCR noise,
+// plus TAG filters (@provincia_id:{28}, @codigo_postal:{28013});
+// municipio grouping is done client-side
 ```
 
 ---
@@ -265,4 +265,4 @@ pnpm --filter @spain-address/cascade start   # → localhost:5978/api/geo/provin
 
 ## 9. License
 
-MIT for code. CC BY 4.0 applies to data derived from CartoCiudad.
+MIT for code (see [LICENSE](./LICENSE)). CC BY 4.0 applies to data derived from CartoCiudad.
