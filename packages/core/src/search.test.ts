@@ -15,6 +15,7 @@ function fakeClient(response: TypesenseSearchResponse, captured?: { params?: Rec
       if (captured) captured.params = params
       return response
     },
+    getDocument: () => Promise.resolve(null),
   }
 }
 
@@ -106,6 +107,7 @@ describe('searchAddresses', () => {
         seen = collection
         return { found: 0, hits: [] }
       },
+      getDocument: () => Promise.resolve(null),
     }
     await searchAddresses({ query: 'x' }, { client, collection: 'custom' })
     expect(seen).toBe('custom')
@@ -162,6 +164,7 @@ describe('searchAddresses', () => {
       dropCollection: () => Promise.resolve(),
       importDocuments: () => Promise.resolve({ success: 0, failed: 0 }),
       search: async () => ({ found: 5, hits: [] }),
+      getDocument: () => Promise.resolve(null),
     }
     const result = await searchAddresses({ query: 'x' }, { client })
     expect(result.total).toBe(5) // no found_docs -> uses found
@@ -318,25 +321,27 @@ describe('searchAddresses (Upstash dispatch)', () => {
 })
 
 describe('createSearchClient', () => {
-  test('defaults to the Upstash/Redis backend when env is configured', () => {
+  test('defaults to Typesense even when Upstash env is present (opt-in required)', () => {
+    vi.stubEnv('USE_UPSTASH', '')
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://example.test')
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'token')
+    try {
+      const deps = createSearchClient()
+      expect(deps.client).toBeDefined()
+      expect(deps.command).toBeUndefined()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  test('uses Upstash only when explicitly opted in (USE_UPSTASH=1) with env configured', () => {
+    vi.stubEnv('USE_UPSTASH', '1')
     vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://example.test')
     vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'token')
     try {
       const deps = createSearchClient()
       expect(typeof deps.command).toBe('function')
       expect(deps.client).toBeUndefined()
-    } finally {
-      vi.unstubAllEnvs()
-    }
-  })
-
-  test('falls back to Typesense when Upstash env is absent', () => {
-    vi.stubEnv('UPSTASH_REDIS_REST_URL', '')
-    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', '')
-    try {
-      const deps = createSearchClient()
-      expect(deps.client).toBeDefined()
-      expect(deps.command).toBeUndefined()
     } finally {
       vi.unstubAllEnvs()
     }

@@ -1,6 +1,8 @@
 // Core package: shared types + backend-agnostic address search.
-// Phase 2 = Typesense backend; Phase 3.5 adds the Upstash / Redis Search backend
-// and flips the default preference to Upstash via `createSearchClient()`.
+// Typesense is the default backend (`createSearchClient()` resolves to it first,
+// since it is HTTP-native and reachable from Cloudflare Workers over a Tunnel).
+// Upstash / Redis Search (managed, REST) remains supported as an explicit opt-in
+// via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`.
 
 export type {
   AddressRecord,
@@ -69,5 +71,6 @@ export type {
   UpstashSearchOptions,
 } from './redis.js'
 
-// Default backend factory: prefers Upstash, falls back to Typesense.
+// Default backend factory: Typesense by default; Upstash / Redis Search is an
+// explicit opt-in (`USE_UPSTASH=1` + REST credentials).
 export { createSearchClient } from './search-client.js'

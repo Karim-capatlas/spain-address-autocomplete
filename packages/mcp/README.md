@@ -51,9 +51,10 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
 - **5-digit postal-code auto-detection** — a numeric `28013` query routes to the
   CP filter; `normalize_address` strips house numbers (`C/ Mayor 12 3ºB` →
   `Calle Mayor`).
-- **Backend-agnostic dispatch** — `createSearchClient()` prefers **Upstash Redis
-  Search** (`UPSTASH_REDIS_REST_URL` + token) and falls back to a local
-  **Typesense** server. No backend lock-in.
+- **Backend-agnostic dispatch** — `createSearchClient()` defaults to a **Typesense**
+  server (the HTTP/REST backend reachable by Workers/cloud) and only opts into
+  **Upstash Redis Search** when `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL` are set.
+  No backend lock-in.
 - **Dependency-light** — minimal stdio JSON-RPC handshake written by hand
   (the `@modelcontextprotocol/sdk` is a declared peer for future publishing).
 - **Typed end-to-end** — strict TypeScript, `AddressRecord` flows from ETL →
@@ -243,16 +244,16 @@ environment at startup:
        @spain-address/core
 ┌─────────────────────────────────────────────┐
 │  search.ts         — dispatches on deps.    │
-│     deps.command → Upstash/Redis Search     │
-│     deps.client   → Typesense (fallback)    │
+│     deps.command → Upstash/Redis Search      │
+│     deps.client   → Typesense (default)      │
 │  search-client.ts  — createSearchClient()   │
-│     prefers Upstash REST, falls back to     │
-│     local Typesense                         │
+│     defaults to Typesense (HTTP/REST),      │
+│     opts into Upstash only when USE_UPSTASH=1│
 │  record.ts         — shared AddressRecord   │
 └───────────────┬─────────────────────────────┘
                 │ indexed data
                 ▼
-        Upstash Redis / Typesense
+        Typesense (default) / Upstash Redis
    749,261 street records from INE Callejero
    (52 provinces • derived from etl/packages/etl)
 ```

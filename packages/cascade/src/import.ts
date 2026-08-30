@@ -1,236 +1,203 @@
-/** Import `GeneratorInput` into the `cascade_es` RediSearch index via ioredis/RESP.
+/** Import the cascade model into the `cascade_es` Typesense collection over HTTP.
 
 Usage:
-  pnpm cascade:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz [--drop] [--batch-size 500] [--url <redis://…>]
+  pnpm cascade:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz [--drop] [--batch-size 500] [--host 127.0.0.1] [--port 8108] …
 
 Design notes:
-- Writes hashes under the `cascade:` prefix with FLAT fields (not a single JSON blob)
-  so the server's FT.SEARCH RETURN path reads individual fields without JSON parsing.
-- CP docs store `municipios` as a single comma-separated TAG value in the hash;
-  RediSearch splits multi-value TAG fields on commas, matching `@municipios:{28079}`
-  query syntax.
-- Hash keys follow `schema.ts` conventions: `cascade:p:28`, `cascade:m:28079`,
-  `cascade:cp:28001` (so the key namespace is self-describing).
-- Reuses the schema definition, index name, and FT.CREATE args from `schema.ts`.
+- Reuses the schema + collection name from `schema.ts`.
+- Provincia / municipio / CP docs are derived from the SAME snapshot the street
+  index uses (`generator.ts`), so cascade data never drifts from `callejero_es`.
+- `--drop` drops the collection first; re-creating is idempotent (409 ignored).
+- `cmum` (municipio ordinal) is intentionally dropped — the cascade lookups key
+  off `id`/`cpro`/`municipios`, and `cmum` isn't a stored field.
+- A doc's Typesense `id` is the code itself ("01", "28079", "28001"), so
+  re-runs are idempotent upserts even without `--drop`.
+
+Env defaults (same conventions as `@spain-address/core`):
+  TYPESENSE_HOST / TYPESENSE_PORT / TYPESENSE_PROTOCOL / TYPESENSE_API_KEY
 */
-import fs from 'node:fs'
-import type { Redis } from 'ioredis'
 
-import type { GeneratorInput, ProvinciaDoc, MunicipioDoc, CPDoc } from './types.js'
+import { join, dirname, isAbsolute } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { createTypesenseClient } from '@spain-address/core'
+import { cascadeSchema, CASCADE_COLLECTION } from './schema.js'
 import {
-  CASCADE_INDEX,
-  CASCADE_PREFIX,
-  provinciaKey,
-  municipioKey,
-  cpKey,
-} from './schema.js'
-import { buildProvinciaDocs, buildMunicipioDocsFromSnapshot, buildCPDocsFromSnapshot } from './generator.js'
+  buildProvinciaDocs,
+  buildMunicipioDocsFromSnapshot,
+  buildCPDocsFromSnapshot,
+} from './generator.js'
+import type { CPDoc, MunicipioDoc, ProvinciaDoc } from './types.js'
 
-/** Render the FT.CREATE SCHEMA argument vector (prefix + schema fields).
- * The caller prepends `FT.CREATE <index>` via `redis.call('FT.CREATE', index, ...)`. */
-export function createFtCreateArgs(): string[] {
-  return [
-    'ON', 'HASH', 'PREFIX', '1', CASCADE_PREFIX,
-    'SCHEMA',
-    'id', 'TAG',
-    'type', 'TAG',
-    'name', 'TEXT',
-    'cpro', 'TAG',
-    'ccaa_id', 'TAG',
-    'municipios', 'TAG',
-  ]
-}
+const WORKSPACE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..')
 
-export function provinciaHashFields(doc: ProvinciaDoc): string[] {
-  return [
-    'id', doc.id,
-    'type', 'provincia',
-    'name', doc.name,
-    'cpro', doc.id,
-    'ccaa_id', doc.ccaa_id,
-    'ccaa_name', doc.ccaa_name,
-  ]
-}
-
-export function municipioHashFields(doc: MunicipioDoc): string[] {
-  return [
-    'id', doc.id,
-    'type', 'municipio',
-    'name', doc.name,
-    'cpro', doc.cpro,
-    'ccaa_id', doc.ccaa_id,
-    'ccaa_name', doc.ccaa_name,
-  ]
-}
-
-export function cpHashFields(doc: CPDoc): string[] {
-  return [
-    'id', doc.id,
-    'type', 'cp',
-    'municipios', doc.municipios.join(','),
-  ]
-}
-
-/**
- * Pipelined import of the full `cascade_es` index. Creates the index first
- * (idempotent — if it already exists the CREATE returns an error which we
- * log and skip), then pipelines HSETs in batches.
- *
- * Returns counts of docs read / indexed / failed.
- */
-export async function runImport(
-  redis: Redis,
-  input: GeneratorInput,
-  options: {
-    drop?: boolean
-    batchSize?: number
-    log?: (msg: string) => void
-  } = {},
-): Promise<{ read: number; indexed: number; failed: number }> {
-  const { drop, batchSize = 500, log = console.log } = options
-  const index = CASCADE_INDEX
-
-  if (drop) {
-    log(`Dropping index ${index}…`)
-    try {
-      await redis.call('FT.DROPINDEX', index, 'DD')
-    } catch (err) {
-      // Index may not exist yet — that's fine.
-      log(`  (drop skipped: ${String(err)})`)
-    }
-    log(`✓ Dropped index ${index}`)
-  }
-
-  log('Creating index…')
-  try {
-    const reply = await redis.call('FT.CREATE', index, ...createFtCreateArgs())
-    log(`✓ Created index ${index} (${String(reply)})`)
-  } catch (err) {
-    // Index already exists — expected on re-runs without --drop.
-    log(`• Index ${index} already exists (${String(err)})`)
-  }
-
-  const batch: Array<[string, ...string[]]> = []
-  let indexed = 0
-  let failed = 0
-
-  async function flush(): Promise<void> {
-    if (batch.length === 0) return
-    const pipeline = redis.pipeline()
-    for (const [key, ...fields] of batch) {
-      pipeline.hset(key, ...fields)
-    }
-    const results = await pipeline.exec()
-    if (results) {
-      for (const result of results) {
-        if (result[0]) {
-          failed++
-        } else {
-          indexed++
-        }
-      }
-    }
-    batch.length = 0
-  }
-
-  // Provincias first (small, 52).
-  let read = 0
-  for (const doc of input.provincias) {
-    batch.push([provinciaKey(doc.id), ...provinciaHashFields(doc)])
-    read++
-    if (batch.length >= batchSize) await flush()
-  }
-  await flush()
-  log(`✓ Provincias imported: ${input.provincias.length}`)
-
-  // Municipios.
-  for (const doc of input.municipios) {
-    batch.push([municipioKey(doc.id), ...municipioHashFields(doc)])
-    read++
-    if (batch.length >= batchSize) await flush()
-  }
-  await flush()
-  log(`✓ Municipios imported: ${input.municipios.length}`)
-
-  // CPs.
-  for (const doc of input.cps) {
-    batch.push([cpKey(doc.id), ...cpHashFields(doc)])
-    read++
-    if (batch.length >= batchSize) await flush()
-  }
-  await flush()
-  log(`✓ CPs imported: ${input.cps.length}`)
-
-  return { read, indexed, failed }
-}
-
-// ---- CLI ------------------------------------------------------------------
-
-interface CliFlags {
+interface CliOptions {
   snapshot: string
-  drop?: boolean
+  collection: string
+  drop: boolean
   batchSize: number
-  url?: string
+  host: string
+  port: number
+  protocol: 'http' | 'https'
+  apiKey: string
 }
 
-function parseArgs(argv: string[]): CliFlags {
-  const flags: CliFlags = { snapshot: '', batchSize: 500 }
+function parseArgs(argv: string[]): CliOptions {
+  const opts: CliOptions = {
+    snapshot: '',
+    collection: CASCADE_COLLECTION,
+    drop: false,
+    batchSize: 500,
+    host: process.env.TYPESENSE_HOST ?? '127.0.0.1',
+    port: Number(process.env.TYPESENSE_PORT ?? '8108'),
+    protocol: (process.env.TYPESENSE_PROTOCOL ?? 'http') as 'http' | 'https',
+    apiKey: process.env.TYPESENSE_API_KEY ?? 'xyz',
+  }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
+    const next = argv[i + 1]
     switch (arg) {
       case '--snapshot':
-        flags.snapshot = argv[++i] ?? ''
+        opts.snapshot = next ?? ''
+        i++
         break
-      case '--drop':
-        flags.drop = true
+      case '--collection':
+        opts.collection = next ?? opts.collection
+        i++
         break
       case '--batch-size':
-        flags.batchSize = Number(argv[++i] ?? '500')
+        opts.batchSize = next ? Number(next) : opts.batchSize
+        i++
         break
-      case '--url':
-        flags.url = argv[++i]
+      case '--drop':
+        opts.drop = true
+        break
+      case '--host':
+        opts.host = next ?? opts.host
+        i++
+        break
+      case '--port':
+        opts.port = next ? Number(next) : opts.port
+        i++
+        break
+      case '--protocol':
+        opts.protocol = (next as CliOptions['protocol']) ?? opts.protocol
+        i++
+        break
+      case '--api-key':
+        opts.apiKey = next ?? opts.apiKey
+        i++
+        break
+      case '--':
         break
       default:
-        throw new Error(`Unknown flag: ${arg}`)
+        break
     }
   }
-  if (!flags.snapshot) throw new Error('--snapshot is required (.jsonl or .jsonl.gz)')
-  if (!fs.existsSync(flags.snapshot)) throw new Error(`Snapshot not found: ${flags.snapshot}`)
-  return flags
+  if (!opts.snapshot) throw new Error('--snapshot is required (.jsonl or .jsonl.gz)')
+  return opts
 }
 
-async function main(): Promise<void> {
-  const flags = parseArgs(process.argv.slice(2))
-  const log = (msg: string) => console.log(msg)
+/** Project a generator doc onto the `cascade_es` schema.
+ * - `id` (Typesense reserved) = `type:code` so CP and municipio codes that share
+ *   digits never collide on upsert.
+ * - `code` = the bare INE/postal code, what the API returns to clients.
+ * `cmum` is intentionally dropped — not a stored field (keyed by `id`/`cpro`). */
+function cascadeDocument(doc: ProvinciaDoc | MunicipioDoc | CPDoc): Record<string, unknown> {
+  const code = String(doc.id)
+  const out: Record<string, unknown> = { id: `${doc.type}:${code}`, type: doc.type, code }
+  switch (doc.type) {
+    case 'provincia':
+      out.name = doc.name
+      out.ccaa_id = doc.ccaa_id
+      out.ccaa_name = doc.ccaa_name
+      break
+    case 'municipio':
+      out.cpro = doc.cpro
+      out.name = doc.name
+      out.ccaa_id = doc.ccaa_id
+      out.ccaa_name = doc.ccaa_name
+      break
+    case 'cp':
+      out.municipios = doc.municipios
+      break
+  }
+  return out
+}
 
-  log(`Building generator input from ${flags.snapshot}…`)
-  const [provincias, municipios, cps] = await Promise.all([
-    Promise.resolve(buildProvinciaDocs()),
-    buildMunicipioDocsFromSnapshot(flags.snapshot),
-    buildCPDocsFromSnapshot(flags.snapshot),
-  ])
+function resolveSnapshotPath(snapshot: string): string {
+  return isAbsolute(snapshot) ? snapshot : join(WORKSPACE_ROOT, snapshot)
+}
 
-  log(`Derived: ${provincias.length} provincias | ${municipios.length} municipios | ${cps.length} CPs`)
+async function run(): Promise<void> {
+  const opts = parseArgs(process.argv.slice(2))
+  const snapshot = resolveSnapshotPath(opts.snapshot)
 
-  const Redis = (await import('ioredis')).default
-  const redis = flags.url ? new Redis(flags.url) : new Redis()
-  await redis.ping()
-  log(`✓ Connected to Redis at ${flags.url ?? 'default'}`)
-
-  const result = await runImport(redis, { provincias, municipios, cps }, {
-    drop: flags.drop,
-    batchSize: flags.batchSize,
-    log,
+  const client = createTypesenseClient({
+    config: { host: opts.host, port: opts.port, protocol: opts.protocol, apiKey: opts.apiKey },
   })
-  log(`✓ Import complete: read=${result.read}, indexed=${result.indexed}, failed=${result.failed}`)
-  await redis.quit()
-  process.exit(0)
-}
-
-// Only run CLI if invoked directly (not when imported by tests).
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((err) => {
-    console.error(err)
+  const ok = await client.health()
+  if (!ok) {
+    console.error('Typesense server is not healthy. Is it running on the configured host/port?')
     process.exit(1)
-  })
+  }
+  console.log('✓ Typesense server is healthy')
+
+  if (opts.drop && (await client.collectionExists(opts.collection))) {
+    console.log(`Dropping existing collection ${opts.collection}...`)
+    await client.dropCollection(opts.collection)
+    console.log('✓ Dropped')
+  }
+
+  try {
+    await client.createCollection({ ...cascadeSchema, name: opts.collection })
+    console.log(`✓ Created collection ${opts.collection}`)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (!msg.includes('409')) {
+      console.error(`Failed to create collection: ${msg}`)
+      process.exit(1)
+    }
+    console.log(`Collection ${opts.collection} already exists; upserting documents.`)
+  }
+
+  console.log(`Building generator input from ${snapshot}…`)
+  // Provincias are static (52); municipios/CPs derive from the snapshot stream.
+  const provincias = buildProvinciaDocs()
+  const [municipios, cps] = await Promise.all([
+    buildMunicipioDocsFromSnapshot(snapshot),
+    buildCPDocsFromSnapshot(snapshot),
+  ])
+  const input: Array<ProvinciaDoc | MunicipioDoc | CPDoc> = [...provincias, ...municipios, ...cps]
+  console.log(`Derived: ${provincias.length} provincias | ${municipios.length} municipios | ${cps.length} CPs`)
+
+  let indexed = 0
+  let buffer: string[] = []
+  const flush = async (): Promise<void> => {
+    if (buffer.length === 0) return
+    const ndjson = buffer.join('\n') + '\n'
+    const res = await client.importDocuments(opts.collection, ndjson, {
+      batchSize: opts.batchSize,
+      action: 'upsert',
+    })
+    indexed += res.success
+    if (res.failed > 0) console.warn(`  ! ${res.failed} documents failed in a batch`)
+    buffer = []
+  }
+
+  for (const doc of input) {
+    buffer.push(JSON.stringify(cascadeDocument(doc)))
+    if (buffer.length >= opts.batchSize) await flush()
+  }
+  await flush()
+
+  console.log('\n=== Import complete ===')
+  console.log(`  Records read:    ${input.length.toLocaleString()}`)
+  console.log(`  Indexed:         ${indexed.toLocaleString()}`)
+  if (indexed !== input.length) process.exitCode = 1
 }
+
+run().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})

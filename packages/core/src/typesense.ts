@@ -65,6 +65,9 @@ export interface TypesenseClient {
     collection: string,
     params: Record<string, string | number | boolean | undefined>,
   ): Promise<TypesenseSearchResponse>
+  /** `GET /collections/:name/documents/:id` — fetch one document by its id.
+   * Returns `null` on 404 (no match); throws on other errors. */
+  getDocument(collection: string, documentId: string): Promise<Record<string, unknown> | null>
 }
 
 /** Subset of the Typesense collection-create schema (REST `POST /collections`). */
@@ -246,6 +249,19 @@ export function createTypesenseClient(options: TypesenseClientOptions = {}): Typ
         throw new Error(`Search failed: ${res.status} ${text}`)
       }
       return (await res.json()) as TypesenseSearchResponse
+    },
+
+    async getDocument(collection, documentId) {
+      const res = await fetchFn(
+        buildUrl(config, `/collections/${encodeURIComponent(collection)}/documents/${encodeURIComponent(documentId)}`),
+        { headers: authHeaders(config), method: 'GET', signal: timeoutSignal(config) },
+      )
+      if (!res.ok) {
+        if (res.status === 404) return null
+        const text = await res.text()
+        throw new Error(`Get document failed: ${res.status} ${text}`)
+      }
+      return (await res.json()) as Record<string, unknown>
     },
   }
 }

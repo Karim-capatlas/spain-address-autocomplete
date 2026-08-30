@@ -1,42 +1,39 @@
-# Local search backend for Phase 3.5 (Upstash Redis Search migration).
+# Local search backend (Typesense) for Phase 3.5+.
 #
-# `redis-stack-server` ships the RediSearch module — the same engine Upstash
-# Cloud runs — so the local index behaves identically to production.
+# A single shared Typesense instance backs BOTH the street index (`callejero_es`,
+# 749,261 docs) and the cascade dropdown index (`cascade_es`, ~18,285 docs). It
+# is the same engine used on the VPS, so local behaviour matches production.
+#
+# Local dev note: on macOS the author runs Typesense via Homebrew instead
+# (`brew services start typesense-server@30.2`, api-key `xyz`, 127.0.0.1:8108).
+# This compose file is the Linux/VPS equivalent — use whichever you prefer; the
+# client (`packages/core`) only needs TYPESENSE_HOST/PORT/API_KEY.
 #
 # Usage:
-#   docker-compose up -d redisearch        # start the shared RediSearch
-#   pnpm cascade:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
-#   docker-compose up -d cascade         # start the cascade server (port 3001)
-#
-# Note: this machine has the legacy `docker-compose` binary (no `docker compose`
-# v2 plugin) — use `docker-compose`, not `docker compose`.
+#   docker compose up -d typesense          # start the shared TypesSense backend
+#   pnpm typesense:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
+#   pnpm cascade:import  -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
+#   pnpm -F @spain-address/cascade start  # cascade BFF (port 5978, reads typesense on localhost)
+#   pnpm -F @spain-address/proxy start     # search BFF
 
 services:
-  redisearch:
-    image: redis/redis-stack-server:latest
-    container_name: redisearch
+  typesense:
+    image: typesense/typesense:30.2           # matches the brew dev version; pin as needed
+    container_name: typesense
     restart: unless-stopped
     ports:
-      - '127.0.0.1:6379:6379'
+      - '127.0.0.1:8108:8108'
     volumes:
-      - redisearch-data:/data
+      - typesense-data:/data
+    environment:
+      - TYPESENSE_DATA_DIR=/data
+      - TYPESENSE_API_KEY=xyz        # dev key; override in prod
+      - TYPESENSE_ENABLE_CORS=true
     healthcheck:
-      test: ['CMD', 'redis-cli', 'PING']
+      test: ['CMD', 'curl', '-f', 'http://127.0.0.1:8108/health']
       interval: 10s
       timeout: 3s
       retries: 5
 
-  cascade:
-    build: ./packages/cascade
-    container_name: cascade
-    restart: unless-stopped
-    ports:
-      - '3001:5978'
-    environment:
-      CASCADE_REDIS_URL: redis://redisearch:6379
-    depends_on:
-      redisearch:
-        condition: service_healthy
-
 volumes:
-  redisearch-data:
+  typesense-data:

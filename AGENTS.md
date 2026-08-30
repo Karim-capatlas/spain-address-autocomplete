@@ -18,9 +18,9 @@ addresses from Spanish identity cards in-browser and normalizes them via MCP.
 
 - **Stack:** TypeScript (strict) · ESM · pnpm 9 workspaces · Turborepo · TS 5.5 / Node 22 · Vitest 2 · tsup · ESLint (flat) · Prettier (`singleQuote`, no semis)
 - **Data:** INE Callejero (`caj_esp_*.zip`) — 749,261 streets across 52 provinces, sourced from open government data
-- **Search:** Upstash Redis Search (Phase 3.5) for street-level fuzzy address normalization; local `cascade_es` RediSearch index for the provincia→municipio→CP dropdown cascade — both derived from the same INE snapshot
-- **Current migration:** Typesense → **Upstash Redis Search** (Phase 3.5), with a new `packages/mcp/` MCP server wrapping `searchAddresses()` as `normalize_address` + `search_addresses` tools
-- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, 132 tests green, 749K docs indexed & searched in a local RediSearch container (`docker-compose.yml`); core's `searchAddresses` default flipped to Upstash (`createSearchClient()` prefers Upstash REST → Typesense fallback; Upstash Cloud REST is unit-tested only — no creds locally, live verification via local RediSearch/RESP) · **`packages/cascade/` ✅ done & live-verified** — standalone Hono server replacing the `geoapi.es` provincia→municipio→CP router, backed by a dedicated `cascade_es` RediSearch index built from the same INE snapshot (52 provincias, ~8.1K municipios, 10,127 CPs)
+- **Search:** **Typesense** (HTTP/REST, local `127.0.0.1:8108` dev / Upstash-hosted in prod) for street-level fuzzy address normalization; local `cascade_es` Typesense collection for the provincia→municipio→CP dropdown cascade — both derived from the same INE snapshot
+- **Current migration:** Typesense is the default backend; **Upstash Redis Search** is retained as an explicit opt-in (`USE_UPSTASH=1`); `packages/mcp/` wraps `searchAddresses()` as `normalize_address` + `search_addresses` tools
+- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, **138** tests green (13 files), 749K docs indexed & searched. **Backend default is now Typesense** (`createSearchClient()` defaults to Typesense over HTTP/REST; Upstash Redis Search is retained as an explicit opt-in via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`). Local dev uses the Homebrew Typesense server (`127.0.0.1:8108`, key `xyz`); Upstash Cloud REST is unit-tested only (no creds locally, live verification via local Typesense) · **`packages/cascade/` ✅ done & live-verified** — standalone Hono server replacing the `geoapi.es` provincia→municipio→CP router, backed by a dedicated `cascade_es` Typesense collection (HTTP/REST) built from the same INE snapshot (52 provincias, 8,106 municipios, 10,127 CPs). The cascade BFF is HTTP-addressable so it can sit behind a Cloudflare Tunnel and be called by a Worker; the Widget topology section (Phase 4) has the details.
 
 ## Toolchain status (GREEN — do not regress)
 
@@ -46,28 +46,34 @@ pnpm test        # 132 tests pass (12 files)
 | 1 | ETL pipeline (INE parser, normalize, merge, dedupe, JSONL+gzip output) | ✅ Done & verified |
 | 2 | Typesense schema + ingestion + search function (`packages/core`) | ✅ Done & verified |
 | 3 | StencilJS widget (`<address-search-es>`, grouped/national‑aware) + React wrappers | ✅ Done (build green; core inlined; React target generated) |
-| **3.5** | **Upstash Redis Search migration + MCP server** (`packages/mcp/`) | ✅ Done |
+| **3.5** | **Typesense default + Upstash opt-in + MCP server** (`packages/mcp/`, `packages/cascade/`) | ✅ Done & live-verified
 | 4 | Docker Compose + developer experience | 🔲 Not started |
 | 5 | CI/CD (GitHub Actions) | 🔲 Not started |
 | 6 | Documentation + OSS release | 🔲 Not started |
 
-### Phase 3.5 — Upstash Redis Search + MCP server (IN PROGRESS)
+### Phase 3.5 — Typesense default + MCP server (DONE & live-verified)
 
-This is the current focus. The goal: replace Typesense with Upstash Redis Search
-and expose an MCP server.
+Typesense is the default search backend (HTTP/REST, Worker-reachable); Upstash
+Redis Search is retained as an explicit opt-in for teams that prefer a
+Redis-protocol backend. `packages/mcp/` exposes `normalize_address` +
+`search_addresses` tools over `@spain-address/core`'s `createSearchClient()`.
 
-**Schema migration map (Typesense → Upstash Redis Search):**
-- `query_by` weights `5,3,1,1` → `TEXT via_nombre WEIGHT 5.0 ... TEXT via_nombre_completo WEIGHT 3.0 ... TEXT municipio WEIGHT 1.0 ... TEXT provincia WEIGHT 1.0`
-- `infix: true` → `$smart` / `$fuzzy` query operators (Levenshtein distance 1–2 for OCR typo tolerance)
-- `facet: true` on municipio_id/provincia_id/codigo_postal → `TAG` fields for exact-match filtering
-- `group_by=municipio_id` → `AGGREGATE ... GROUPBY`
-- `highlight: true` → `HIGHLIGHT` in SEARCH.QUERY
+The `packages/cascade/` dropdown service was ported from the old ioredis/RESP
+store to a Typesense HTTP store (see `docs/vps-deploy.md` §4–§5): the reserved
+Typesense `id` is the composite `type:code` so CP and municipio codes that share
+digits never collide on upsert, and `q='*'` queries `per_page` at Typesense's
+250-doc hard cap (with internal pagination for provinces like Barcelona that
+have >250 municipios).
 
-**MCP server plan (`packages/mcp/`):**
+**Backend dispatch map (`@spain-address/core` → search backend):**
+- Typesense path (`client`): `query_by` weights `5,3,1,1`, `infix` on street names, `facet` on municipio_id/provincia_id/codigo_postal, `group_by=municipio_id`/`group_limit=3`, `highlight`.
+- Upstash path (`command`): `%term%` fuzzy operator (Levenshtein 1), `TAG` facets on municipio_id/provincia_id/codigo_postal, client-side grouping.
+
+**`MCP server (`packages/mcp/`):**
 - stdio transport (spawnable by Claude Desktop / Cursor / parent OCR pipeline)
 - Tool `normalize_address(text: string)` → single best structured match
 - Tool `search_addresses(query: string, filters?)` → ranked matches
-- Uses `searchAddresses()` from `@spain-address/core` (to be rewritten for Upstash)
+- Uses `searchAddresses()` from `@spain-address/core` via `createSearchClient()` (Typesense by default; Upstash opt-in), so MCP gets the local/cloud HTTP backend by default.
 
 ### Phase 3 — Stencil widget (DONE)
 
@@ -250,14 +256,14 @@ Search (via `searchAddresses` against the built core):
 | Package | Purpose | Status |
 |---|---|---|
 | `packages/etl` | INE ZIP downloader, `TRAM` parser, `UP` municipio derivation, normalize/merge/dedupe, JSONL+gzip writer, CLI | ✅ Complete |
-| `packages/core` | `AddressRecord`/`SearchOptions`/`SearchResult` types + **backend-agnostic `searchAddresses`** (dispatches `command`=Upstash vs `client`=Typesense) + `createSearchClient()` factory (Upstash REST preferred → Typesense fallback) + Upstash REST client/primitives + `searchAddressesTypesense` (widget direct-mode, keeps Upstash code out of browser bundle) | ✅ Complete (Phase 2) · Phase 3.5 default flipped to Upstash |
+| `packages/core` | `AddressRecord`/`SearchOptions`/`SearchResult` types + **backend-agnostic `searchAddresses`** (dispatches `command`=Upstash vs `client`=Typesense) + `createSearchClient()` factory (**Typesense by default**; Upstash opt-in via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`) + Upstash REST client/primitives (retained) + `searchAddressesTypesense` (widget direct-mode, keeps Upstash code out of browser bundle) | ✅ Complete (Phase 2) · Phase 3.5 default flipped to Typesense |
 | `packages/typesense` | `callejero_es` collection schema + bulk-import CLI (`import.ts`) | ✅ Complete (Phase 2) |
 | `packages/widget` | **StencilJS** custom element `<address-search-es>` (grouped results, CP detection, province scoping) + generated React/Vue/Angular wrappers | ✅ Done |
-| `packages/proxy` | Hono BFF proxy (`GET /api/address-search`, `GET /health`); forwards `@spain-address/core`'s full `SearchDependencies` via `createSearchClient()` (Upstash-default) | ✅ Complete · Phase 3.5 Upstash-default |
+| `packages/proxy` | Hono BFF proxy (`GET /api/address-search`, `GET /health`); forwards `@spain-address/core`'s full `SearchDependencies` via `createSearchClient()` (Typesense-default) + CORS | ✅ Complete · Phase 3.5 Typesense-default |
 | `packages/react` | **Superseded** — replaced by the Stencil‑generated React target (`@spain-address/widget/react`) | n/a |
 | `packages/upstash` | **Upstash Redis Search** — FT.CREATE schema (`schema.ts`, TEXT weights 5/3/1/1 + TAG filters) + bulk-import CLI; query primitives/REST client now live in `@spain-address/core` and are re-exported here for backward compat (`search.ts`/`client.ts`) | ✅ Phase 3.5 done |
-| `packages/mcp` | **MCP server** — stdio JSON-RPC (`initialize`/`tools/list`/`tools/call`); `normalize_address` + `search_addresses` tools over `@spain-address/core` via `createSearchClient()` (Upstash default) | ✅ Phase 3.5 done (live-verified) |
-| `packages/cascade` | **Cascade server** — standalone Hono app (`GET /api/geo/provincias`, `/municipios`, `/cps`, `/validate-cp`) backed by a dedicated `cascade_es` RediSearch index (52 provincias, ~8.1K municipios, 10,127 CPs). Replaces the external `geoapi.es` router with local sub-ms lookups; transport is ioredis/RESP (works with both local redis-stack and Upstash Cloud RESP endpoint). Import CLI (`pnpm cascade:import`) derives docs from the same ETL snapshot in one pass. | ✅ Live-verified
+| `packages/mcp` | **MCP server** — stdio JSON-RPC (`initialize`/`tools/list`/`tools/call`); `normalize_address` + `search_addresses` tools over `@spain-address/core` via `createSearchClient()` (Typesense default; Upstash opt-in) | ✅ Phase 3.5 done (live-verified) |
+| `packages/cascade` | **Cascade server** — standalone Hono app (`GET /api/geo/provincias`, `/municipios`, `/cps`, `/validate-cp`) backed by a dedicated `cascade_es` Typesense collection (HTTP/REST): 52 provincias, 8,106 municipios, 10,127 CPs. Replaces the external `geoapi.es` router with local sub-ms lookups; the HTTP/REST transport is Worker-reachable via a Cloudflare Tunnel (see Phase 4 / `docs/vps-deploy.md`). Import CLI (`pnpm cascade:import`) derives docs from the same ETL snapshot in one pass. | ✅ Live-verified (local Typesense, 18,285 docs)
 
 #### Phase 3.5 implementation notes (do not rediscover)
 
@@ -265,7 +271,7 @@ Search (via `searchAddresses` against the built core):
 - Upstash REST replies decode FT.SEARCH as a flat array `[total, key1, doc1, key2, doc2, …]`; docs may be flat `[field, value, …]` arrays or objects — `parseSearchReply` handles both. Grouping is done client-side (`groupRecords`) since AGGREGATE GROUPBY is deferred.
 - Import stores each record as one hash (`HSET callejero:<id> data <jsonl-line>`); read path parses JSON back to `AddressRecord`.
 - `packages/mcp/src/cli.ts` implements the MCP handshake minimally over newline-delimited JSON-RPC on stdio (no SDK dependency). Smoke-tested: `initialize`, `tools/list` respond correctly.
-- Phase 3.5 default-flip is **done**: `core`'s `searchAddresses(options, deps)` dispatches to the Upstash path when `deps.command` (a Redis `command(args)` fn) is present, else to Typesense when `deps.client` is present, else throws `'no backend configured'`. `createSearchClient()` selects Upstash when `UPSTASH_REDIS_REST_URL`+token env vars are set, otherwise falls back to the local Typesense client — so MCP/proxy get the Upstash backend in cloud deployments and Typesense for local dev. The widget imports `searchAddressesTypesense` (the pure Typesense path) so no Upstash/FT.SEARCH code ships in the browser bundle. Live-verified locally against rediSearch (749K docs, q:"Gran Vía"→134, CP 28013+"mayor"→1).
+- Phase 3.5 default-flip is **done**: `core`'s `searchAddresses(options, deps)` dispatches to the Upstash path when `deps.command` (a Redis `command(args)` fn) is present, else to Typesense when `deps.client` is present, else throws `'no backend configured'`. `createSearchClient()` now selects **Typesense by default** (`TYPESENSE_HOST`/`TYPESENSE_PORT`/`TYPESENSE_PROTOCOL`/`TYPESENSE_API_KEY`), and only selects Upstash when `USE_UPSTASH=1` is set **and** `UPSTASH_REDIS_REST_URL`+token env vars are present — so MCP/proxy/cascade use Typesense in both local and cloud deployments; Upstash Redis Search is retained for teams that want a Redis-protocol backend. The widget imports `searchAddressesTypesense` (the pure Typesense path) so no Upstash/FT.SEARCH code ships in the browser bundle. Live-verified locally against Typesense (callejero_es 749,261 docs; cascade_es 18,285 docs: 52 provincias, 8,106 municipios, 10,127 CPs; `q:"Gran Vía"`→134, `/validate-cp` 28079+28013→`{valid:true,ineCode:"28079"}`).
 
 ### `packages/etl` — key files
 - `src/index.ts` — `commander` CLI with `run` and `validate` subcommands.

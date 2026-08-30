@@ -2,7 +2,7 @@
   "name": "@spain-address/cascade",
   "version": "0.1.0",
   "type": "module",
-  "description": "Standalone provincia → municipio → código postal cascade server — replaces the external geoapi.es router with a local RediSearch index (cascade_es).",
+  "description": "Standalone provincia → municipio → código postal cascade server — replaces the external geoapi.es router with a local Typesense collection (cascade_es).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,10 +17,6 @@
     "./import": {
       "types": "./dist/import.d.ts",
       "import": "./dist/import.js"
-    },
-    "./redis": {
-      "types": "./dist/redis.d.ts",
-      "import": "./dist/redis.js"
     },
     "./schema": {
       "types": "./dist/schema.d.ts",
@@ -38,7 +34,7 @@
     "spain-address-cascade": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/redis.ts src/schema.ts src/generator.ts src/import.ts src/cli.ts --format esm --dts",
+    "build": "tsup src/index.ts src/typesense.ts src/schema.ts src/generator.ts src/import.ts src/cli.ts --format esm --dts",
     "import": "tsx src/import.ts",
     "dev": "tsx watch src/cli.ts",
     "start": "tsx src/cli.ts",
@@ -49,8 +45,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
-    "hono": "^4.6.0",
-    "ioredis": "^5.4.0"
+    "@spain-address/core": "workspace:*",
+    "hono": "^4.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

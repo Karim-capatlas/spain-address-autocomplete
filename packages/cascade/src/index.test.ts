@@ -1,20 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
 import { createApp, type CascadeDependencies } from './index.js'
-import { type CascadeStore, parseFtSearchReply } from './redis.js'
+import type { CascadeStore } from './types.js'
 
 type FakeRow = { fields: Record<string, string> }
 
-/**
- * Build a fake store keyed by the leading clause of the FT.SEARCH query
- * (e.g. "@type:{provincia}"). `start` returns the route handler for a given
- * path so tests can use `app.request` without spinning up a socket.
- */
+/** A fake store keyed by doc `type`, mirroring the real store's contract but
+ * ignoring the structured filter details (handlers are tested by their query
+ * params, not the store internals — see `typesense.test.ts` for the store). */
 function fakeStore(rows: Record<string, FakeRow[]>): CascadeStore {
   return {
-    async search(query: string) {
-      const key = Object.keys(rows).find((k) => query.startsWith(k))
-      const list = key ? rows[key] : []
+    async search(filter) {
+      const list = rows[filter.type] ?? []
       return list.map((d, i) => ({ id: `cascade:doc:${i}`, fields: d.fields }))
     },
   }
@@ -26,29 +23,35 @@ function makeApp(deps: CascadeDependencies): Hono {
 
 const PROVINCIAS = makeApp({
   store: fakeStore({
-    '@type:{provincia}': [{ fields: { id: '01', name: 'Álava', ccaa_name: 'País Vasco' } }, { fields: { id: '28', name: 'Madrid', ccaa_name: 'Comunidad de Madrid' } }],
+    provincia: [
+      { fields: { code: '01', name: 'Álava', ccaa_name: 'País Vasco' } },
+      { fields: { code: '28', name: 'Madrid', ccaa_name: 'Comunidad de Madrid' } },
+    ],
   }),
 })
 
 const MUNICIPIOS = makeApp({
   store: fakeStore({
-    '@type:{municipio}': [{ fields: { id: '28079', name: 'Madrid', ccaa_name: 'Comunidad de Madrid' } }, { fields: { id: '28013', name: 'Alcorcón', ccaa_name: 'Comunidad de Madrid' } }],
+    municipio: [
+      { fields: { code: '28079', name: 'Madrid', ccaa_name: 'Comunidad de Madrid' } },
+      { fields: { code: '28013', name: 'Alcorcón', ccaa_name: 'Comunidad de Madrid' } },
+    ],
   }),
 })
 
 const CPS = makeApp({
   store: fakeStore({
-    '@type:{cp}': [{ fields: { id: '28001' } }, { fields: { id: '28002' } }, { fields: { id: '28010' } }],
+    cp: [{ fields: { code: '28001' } }, { fields: { code: '28002' } }, { fields: { code: '28010' } }],
   }),
 })
 
 const VALIDATE_OK = makeApp({
-  store: fakeStore({ '@type:{cp}': [{ fields: { municipios: '28079,28078' } }] }),
+  store: fakeStore({ cp: [{ fields: { municipios: '28079,28078' } }] }),
 })
 const VALIDATE_NO = makeApp({
-  store: fakeStore({ '@type:{cp}': [{ fields: { municipios: '99999' } }] }),
+  store: fakeStore({ cp: [{ fields: { municipios: '99999' } }] }),
 })
-const VALIDATE_NONE = makeApp({ store: fakeStore({ '@type:{cp}': [] }) })
+const VALIDATE_NONE = makeApp({ store: fakeStore({ cp: [] }) })
 
 function json(res: Response): Promise<unknown> {
   return res.clone().json()
@@ -126,22 +129,9 @@ describe('cascade server endpoints (with fake store)', () => {
     expect((await VALIDATE_OK.request('/api/geo/validate-cp?municipio=2807&cp=28001')).status).toBe(400)
     expect((await VALIDATE_OK.request('/api/geo/validate-cp?municipio=28079')).status).toBe(400)
   })
-})
 
-describe('parseFtSearchReply', () => {
-  it('empty/short reply → zero docs', () => {
-    expect(parseFtSearchReply([])).toEqual({ total: 0, docs: [] })
-    expect(parseFtSearchReply([0])).toEqual({ total: 0, docs: [] })
-  })
-
-  it('flat [total, key, [fields]] shape', () => {
-    const r = parseFtSearchReply([1, 'cascade:cp:28001', ['municipios', '28079,28078']])
-    expect(r.total).toBe(1)
-    expect(r.docs).toEqual([{ id: 'cascade:cp:28001', fields: { municipios: '28079,28078' } }])
-  })
-
-  it('object row shape', () => {
-    const r = parseFtSearchReply([1, 'cascade:m:28079', { id: '28079', name: 'Madrid' }])
-    expect(r.docs).toEqual([{ id: 'cascade:m:28079', fields: { id: '28079', name: 'Madrid' } }])
+  it('sets CORS headers (browser demo on another origin)', async () => {
+    const res = await PROVINCIAS.request('/api/geo/provincias', { headers: { origin: 'http://example.test' } })
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://example.test')
   })
 })

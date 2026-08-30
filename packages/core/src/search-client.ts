@@ -1,19 +1,21 @@
 /**
- * Default search-client factory (Phase 3.5).
+ * Default search-client factory.
  *
- * Returns a `SearchDependencies` wired for whichever backend is configured by
- * the environment, preferring **Upstash / Redis Search** and falling back to
- * Typesense:
+ * Returns a `SearchDependencies` wired for the deployment's chosen backend.
  *
- *   1. UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN → Upstash REST command
- *   2. TYPESENSE_HOST (or the local default 127.0.0.1:8108) → Typesense client
+ * **Default: Typesense.** The Worker/VPS deployment speaks to its data store
+ * over HTTP (a Cloudflare Worker can `fetch` a Typesense instance tunneled from
+ * the VPS, but cannot speak raw RESP to a self-hosted Redis). Typesense is
+ * therefore the default backend whenever one is reachable.
  *
- * Callers that inject their own backend (widget direct-mode tests, MCP/proxy
+ * **Upstash / Redis Search (managed, REST)** is still supported, but only as an
+ * explicit opt-in: set `USE_UPSTASH=1` alongside `UPSTASH_REDIS_REST_URL` /
+ * `UPSTASH_REDIS_REST_TOKEN`. It is never chosen automatically, so a stray
+ * Upstash env var can't silently hijack a Typesense deployment.
+ *
+ * Callers that inject their own backend (widget direct-mode tests, proxy/MCP
  * unit tests) bypass this factory entirely and pass `{ client }` or `{ command }`
  * directly — `searchAddresses` dispatches on whichever is present.
- *
- * Reads env via a browser-safe helper so importing core never crashes on a
- * bare `process` reference in a browser bundle.
  */
 
 import { createUpstashClient } from './redis.js'
@@ -21,14 +23,16 @@ import { createTypesenseClient } from './typesense.js'
 import type { SearchDependencies } from './search.js'
 import type { SearchCommand } from './redis.js'
 
+/** Safe `process.env` read — works under Node and in a browser bundle (no `process`). */
 const env = (name: string): string | undefined =>
   (globalThis as unknown as { process?: { env?: Record<string, string> } }).process?.env?.[name]
 
-/** Build the default search dependencies, preferring the Upstash/Redis backend. */
+/** Build the default search dependencies, defaulting to Typesense. Upstash /
+ * Redis Search is opt-in (`USE_UPSTASH=1` + REST credentials). */
 export function createSearchClient(): SearchDependencies {
   const url = env('UPSTASH_REDIS_REST_URL')
   const token = env('UPSTASH_REDIS_REST_TOKEN')
-  if (url && token) {
+  if (env('USE_UPSTASH') === '1' && url && token) {
     const client = createUpstashClient({ config: { url, token } })
     // Wrap so the returned command fn matches `SearchCommand` (drop the generic opts).
     const command: SearchCommand = (args: string[]): Promise<unknown> => client.command(args)
