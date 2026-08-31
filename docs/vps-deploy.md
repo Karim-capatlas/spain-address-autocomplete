@@ -370,6 +370,17 @@ Point the Cloudflare Pages example at the single API base:
   bare code as the Typesense `id`.
 - **Typesense `per_page` ≤ 250** — the cascade store paginates internally; don't
   raise it.
+- **Cloudflare edge 403 = security challenge, not a tunnel/DNS error.** A proxied
+  `calle.alami.es` CNAME is correct and the tunnel connects (BFFs return `200` at
+  `localhost:5978`/`8787`), but the `alami.es` zone's defaults — **Bot Fight Mode**
+  and **Browser Integrity Check** (and the "managed challenge") — return a `403
+  Just a moment…` page for non-browser clients like `curl`/health probes. The fix
+  is on the Cloudflare side, not the VPS: in the dashboard disable **Bot Fight
+  Mode** (Security → Bots) and **Browser Integrity Check** (Security → Overview)
+  for the demo, or add a **WAF override** scoped to hostname `calle.alami.es`
+  path `/api/*` with *Managed Challenge: Off* + *Security Level: Essentially off*
+  (keeps the rest of the zone protected). After toggling,
+  `curl https://calle.alami.es/api/geo/provincias` returns `200` within seconds.
 - **Upgrading later:** if you buy a dedicated domain (e.g. `elcallejero.es`),
   only the tunnel's public hostname changes — nothing on the VPS does.
 
