@@ -30,7 +30,7 @@ Verified end-to-end on this machine:
 pnpm typecheck   # 9/9 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
 pnpm lint        # 8/8 tasks, 0 errors
 pnpm build       # 9/9 tasks — widget + cascade included
-pnpm test        # 132 tests pass (12 files)
+pnpm test        # 138 tests pass (13 files)
 ```
 
 - Root `vitest.config.ts` (`include: packages/**/src/**/*.{test,spec}.*`, v8, thresholds 0.8)
@@ -271,7 +271,7 @@ Search (via `searchAddresses` against the built core):
 - Upstash REST replies decode FT.SEARCH as a flat array `[total, key1, doc1, key2, doc2, …]`; docs may be flat `[field, value, …]` arrays or objects — `parseSearchReply` handles both. Grouping is done client-side (`groupRecords`) since AGGREGATE GROUPBY is deferred.
 - Import stores each record as one hash (`HSET callejero:<id> data <jsonl-line>`); read path parses JSON back to `AddressRecord`.
 - `packages/mcp/src/cli.ts` implements the MCP handshake minimally over newline-delimited JSON-RPC on stdio (no SDK dependency). Smoke-tested: `initialize`, `tools/list` respond correctly.
-- Phase 3.5 default-flip is **done**: `core`'s `searchAddresses(options, deps)` dispatches to the Upstash path when `deps.command` (a Redis `command(args)` fn) is present, else to Typesense when `deps.client` is present, else throws `'no backend configured'`. `createSearchClient()` now selects **Typesense by default** (`TYPESENSE_HOST`/`TYPESENSE_PORT`/`TYPESENSE_PROTOCOL`/`TYPESENSE_API_KEY`), and only selects Upstash when `USE_UPSTASH=1` is set **and** `UPSTASH_REDIS_REST_URL`+token env vars are present — so MCP/proxy/cascade use Typesense in both local and cloud deployments; Upstash Redis Search is retained for teams that want a Redis-protocol backend. The widget imports `searchAddressesTypesense` (the pure Typesense path) so no Upstash/FT.SEARCH code ships in the browser bundle. Live-verified locally against Typesense (callejero_es 749,261 docs; cascade_es 18,285 docs: 52 provincias, 8,106 municipios, 10,127 CPs; `q:"Gran Vía"`→134, `/validate-cp` 28079+28013→`{valid:true,ineCode:"28079"}`).
+- Phase 3.5 default-flip is **done**: `core`'s `searchAddresses(options, deps)` dispatches to the Upstash path when `deps.command` (a Redis `command(args)` fn) is present, else to Typesense when `deps.client` is present, else throws `'no backend configured'`. `createSearchClient()` now selects **Typesense by default** (`TYPESENSE_HOST`/`TYPESENSE_PORT`/`TYPESENSE_PROTOCOL`/`TYPESENSE_API_KEY`), and only selects Upstash when `USE_UPSTASH=1` is set **and** `UPSTASH_REDIS_REST_URL`+token env vars are present — so MCP/proxy/cascade use Typesense in both local and cloud deployments; Upstash Redis Search is retained for teams that want a Redis-protocol backend. The widget imports `searchAddressesTypesense` (the pure Typesense path) so no Upstash/FT.SEARCH code ships in the browser bundle. Live-verified locally against Typesense (callejero_es 749,261 docs; cascade_es 18,285 docs: 52 provincias, 8,106 municipios, 10,127 CPs; `q:"Gran Vía"`→131, `/validate-cp` 28079+28013→`{valid:true,ineCode:"28079"}`).
 
 ### `packages/etl` — key files
 - `src/index.ts` — `commander` CLI with `run` and `validate` subcommands.
@@ -304,12 +304,15 @@ pnpm install
 pnpm typecheck      # 9/9
 pnpm lint           # 0 errors
 pnpm build          # 9/9
-pnpm test           # 132 tests (12 files)
+pnpm test           # 138 tests (13 files)
 
-# ETL
-pnpm exec tsx packages/etl/src/index.ts run   --year 2026 --month 1 --provinces 28 \
-  --skip-download --output packages/data/snapshots/callejero_2026-01_28.jsonl
-pnpm exec tsx packages/etl/src/index.ts validate packages/data/snapshots/callejero_2026-01_28.jsonl
+# ETL — tsx is a per-package devDep (not root-hoisted), so invoke it from
+# packages/etl. `pnpm exec tsx` from the workspace root does NOT resolve on a
+# fresh install — either `cd packages/etl && pnpm exec tsx` or
+# `pnpm --filter @spain-address/etl exec tsx` works.
+cd packages/etl && pnpm exec tsx src/index.ts run   --year 2026 --month 1 --provinces 28 \
+  --skip-download
+cd packages/etl && pnpm exec tsx src/index.ts validate ../data/snapshots/callejero_2026-01_28.jsonl
 
 # Typesense (run `pnpm build` first — core's client ships in dist/; the
 # `preimport` hook runs `pnpm -r build` automatically, so this is enough):

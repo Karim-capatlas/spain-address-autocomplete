@@ -8,15 +8,17 @@ structured fields: **via type, street name, provincia (+ code), municipio
 (+ code), and código postal**.
 
 Backed by a **749,261-record** index of the Spanish street map
-(**INE Callejero**, 52 provinces), served over **Upstash Redis Search**
-(with a Typesense fallback), and spoken to via the **stdio JSON-RPC** transport.
+(**INE Callejero**, 52 provinces), served by default over **Typesense** HTTP/REST
+(local Docker, `127.0.0.1:8108`) — with **Upstash Redis Search** available as an
+opt-in (`USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`TOKEN`) — and spoken to via
+the **stdio JSON-RPC** transport.
 
 ```
 [Claude Desktop / Cursor / parent pipeline]
                │  JSON-RPC over stdio
                ▼
         @spain-address/mcp  ──►  searchAddresses()
-                                   │  Upstash REST / Typesense
+                                   │  Typesense (default) / Upstash (opt-in)
                                    ▼
                             749,261 INE streets
 ```
