@@ -1,14 +1,18 @@
 # spain-address-autocomplete
 
-**Open-source MCP server for Spanish address normalization.** Give it noisy address text — e.g. OCR output from a Spanish DNI/TIE identity card — and get back structured fields: via type, street name, provincia (name + code), municipio (name + code), and código postal.
+**Servidor MCP de código abierto para la normalización de direcciones españolas.**
+Dale texto de dirección ruidoso — p. ej. extraído por OCR de una tarjeta DNI/TIE —
+y obtén campos estructurados: tipo de vía, nombre de calle, provincia (nombre +
+código), municipio (nombre + código) y código postal.
 
-Powered by a **749,261-record** index of the Spanish street map
-([INE Callejero](https://www.ine.es/prodyser/callejero/), open government data,
-snapshot 2026-01). The default, self-hostable backend is **Typesense** (local
-Docker, HTTP/REST); **Upstash Redis Search** is available as an opt-in.
+Alimentado por un índice de **749.261 calles** del mapa español
+([INE Callejero](https://www.ine.es/prodyser/callejero/), datos de dominio público,
+snapshot 2026-01). El backend por defecto, auto-hospedable, es **Typesense**
+(Docker local, HTTP/REST); **Upstash Redis Search** está disponible como opción
+alternativa.
 
-Live demo: **https://calle.alami.es** (OVH VPS-1 fronted by a Cloudflare Tunnel —
-provincia → municipio → CP cascade on `:5978`, fuzzy street search on `:8787`).
+Demo en vivo: **https://calle.alami.es** (VPS OVH-1 detrás de un túnel de
+Cloudflare: cascada provincia→municipio→CP en `:5978`, búsqueda difusa en `:8787`).
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
@@ -17,16 +21,18 @@ provincia → municipio → CP cascade on `:5978`, fuzzy street search on `:8787
 ![Tests](https://img.shields.io/badge/tests-138%20passing-brightgreen)
 ![Live demo](https://img.shields.io/badge/demo-calle.alami.es-33cc77)
 
-> No GIF yet — run `curl "https://calle.alami.es/api/address-search?q=gran%20via"` and see 131 hits for `Calle Gran Vía, …` across Spain. That's the whole product in one request.
+> Aún no hay GIF — ejecuta `curl "https://calle.alami.es/api/address-search?q=gran%20via"` y verás 131 coincidencias para `Calle Gran Vía, …` en toda España. Esa es toda la funcionalidad en una sola petición.
 
-## What it does
+_¿Inglés? [Leer este README en inglés](./README.en.md)._
+
+## Qué hace
 
 ```jsonc
-// MCP tool call
+// Llamada a la herramienta MCP
 { "name": "normalize_address",
-  "arguments": { "text": "C/ Gran via 12, 28013 Madrid" } }   // ← noisy OCR text
+  "arguments": { "text": "C/ Gran via 12, 28013 Madrid" } }   // ← texto ruidoso de OCR
 
-// Response
+// Respuesta
 {
   "via_tipo": "Calle",
   "via_nombre": "Gran Vía",
@@ -39,78 +45,102 @@ provincia → municipio → CP cascade on `:5978`, fuzzy street search on `:8787
 }
 ```
 
-House numbers are stripped (`C/ Mayor 12 3ºB` → `Calle Mayor`), a 5-digit input is
-auto-detected as a postal code, and fuzzy matching (Levenshtein 1–2) tolerates OCR
-typos like `Grn Via` or `2801A`.
+Se separan los números de portal (`C/ Mayor 12 3ºB` → `Calle Mayor`), un código
+de 5 dígitos se detecta automáticamente como código postal, y la búsqueda difusa
+(Levenshtein 1–2) tolera errores de OCR como `Grn Via` o `2801A`.
 
-## Why it exists
+## Por qué existe
 
-- **Existing services fail on OCR text.** `geoapi.es` false-matches noisy input, rate-limits (1 req/s in the sandbox), needs an API key, and serves data from `2024.01` — this repo's INE snapshot is `2026-01`.
-- **Paid geocoding is expensive.** Google Places costs ~€17 per 1,000 requests for something Spain's open data already covers.
-- **Privacy is the requirement.** DNI/TIE cards are PII. This runs against a local Typesense index — no third-party API ever sees the address, and zero data retention is trivially satisfied. Built for Spain's **SES.HOSPEDAJES** reporting compliance.
-- **Nobody had assembled the INE street directory into a ready-to-use tool.** The raw Callejero is a fixed-width, ISO-8859-1, five-file ZIP that needs non-trivial ETL — that work is done here.
+- **La geocodificación existente falla con OCR.** `geoapi.es` genera demasiados falsos positivos
+  con texto ruidoso: ratea (1 req/s en el sandbox), necesita clave API y sirve datos de `2024.01`;
+  el snapshot de INE de este repo es `2026-01`.
+- **La geocodificación de pago es cara.** Google Places cuesta ~17 € por 1.000 peticiones por algo
+  que los datos abiertos de España ya cubren.
+- **La privacidad es un requisito.** El DNI/TIE contiene datos PII. Este servicio consulta un
+  índice Typesense local — nunca se envía la dirección a ningún servicio externo, y la retención
+  de datos es cero. Construido para cumplir **SES.HOSPEDAJES**.
+- **Nadie había reunido el directorio callejero de INE en una herramienta lista para usar.**
+  El Callejero INE es un ZIP de ancho fijo, ISO-8859-1, de cinco ficheros, que requiere un ETL
+  no trivial — y ese trabajo está hecho aquí.
 
-## Verified numbers
+## Números verificados
 
-| Metric | Value |
+| Métrica | Valor |
 |---|---|
-| Street records (INE Callejero 2026-01) | 749,261 |
-| Provincias / municipios / postal codes | 52 / 8,106 / 10,127 |
-| `callejero_es` import (Typesense, 2 vCores — OVH VPS-1) | ~5–7 min |
-| Live check: `"Gran Vía"` (national) | 131 hits |
-| Live check: CP `28013` + `"mayor"` | exactly 1 hit — `Calle Mayor, Madrid` |
-| Live demo | https://calle.alami.es (Typesense + Cloudflare Tunnel) |
-| Tests | 138 unit (13 files) |
-| Toolchain | typecheck 9/9 · lint 0 errors · build 9/9 |
+| Registros de calles (INE Callejero 2026-01) | 749.261 |
+| Provincias / municipios / códigos postales | 52 / 8.106 / 10.127 |
+| Importación de `callejero_es` (Typesense, 2 vCores — VPS OVH-1) | ~5–7 min |
+| Verificación en vivo: `"Gran Vía"` (nacional) | 131 coincidencias |
+| Verificación en vivo: CP `28013` + `"mayor"` | exactamente 1 — `Calle Mayor, Madrid` |
+| Demo en vivo | https://calle.alami.es (Typesense + túnel Cloudflare) |
+| Tests | 138 (13 archivos) |
+| Toolchain | typecheck 9/9 · lint 0 errores · build 9/9 |
 
-## Architecture
+## Arquitectura
 
 ```
-[DNI/TIE OCR pipeline — parent project]
-  Browser: PaddleV6 + WebGPU (in-browser OCR, zero retention)
-      │
-      ├── MCP stdio ──► packages/mcp        normalize_address / search_addresses
-      │                    └── @spain-address/core ──► Typesense (default @127.0.0.1:8108)
-      │                                       Upstash Redis Search (opt-in: USE_UPSTASH=1)
-      └── HTTP ───────► packages/cascade    GET /api/geo/provincias | /municipios | /cps | /validate-cp
-                           └── HTTP/REST ──► cascade_es Typesense collection (~18K docs)
-
-                                           [OVH VPS-1]──Cloudflare Tunnel──► calle.alami.es
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  DNI/TIE OCR PIPELINE (proyecto padre — código abierto)                       │
+│                                                                              │
+│  [Navegador]                                                                  │
+│   PaddleV6 + WebGPU (imagen de tarjeta de identidad)                          │
+│       │                                                                        │
+│       ▼                                                                        │
+│   Texto OCR: "Calle Mayor, 28013 Madrid"                                       │
+│       │                                                                        │
+│       ├──── (1) Llamada MCP stdio ──► packages/mcp/                            │
+│       │    normalize_address("Calle Mayor, 28013 Madrid")                      │
+│       │    → @spain-address/core → Typesense (por defecto @127.0.0.1:8108)    │
+│       │                           Upstash Redis Search (opcional: USE_UPSTASH=1)│
+│       │    ←── { via_tipo, via_name, provincia, municipio, CP }                │
+│       │                                                                        │
+│       └──── (2) Llamada HTTP ───► packages/cascade/                            │
+│          GET /api/geo/provincias                                               │
+│          GET /api/geo/municipios?provincia=28                                  │
+│          GET /api/geo/cps?municipio=28079                                      │
+│          GET /api/geo/validate-cp?municipio=28079&cp=28001                     │
+│          → cascade_es (colección Typesense, HTTP/REST)                         │
+│          ←── opciones del desplegable                                          │
+│                                                                              │
+│  Fuente compartida: callejero_2026-01.jsonl.gz (749.261 filas INE)            │
+│                                                                              │
+│  [VPS OVH-1]──Túnel Cloudflare──► calle.alami.es                             │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Three ways to consume the same dataset:
+Tres formas de consumir el mismo dataset:
 
-| Interface | What it is | Docs |
+| Interfaz | Qué es | Docs |
 |---|---|---|
-| MCP server | stdio JSON-RPC server with `normalize_address` + `search_addresses` tools — for Claude Desktop, Cursor, or any MCP agent | [packages/mcp](./packages/mcp/README.md) |
-| Cascade server | Hono HTTP API replacing geoapi.es for the provincia → municipio → CP dropdown cascade (sub-ms local lookups) | [packages/cascade](./packages/cascade/README.md) |
-| Widget | Framework-agnostic `<address-search-es>` Stencil web component + React wrapper: grouped results, CP auto-detection, ARIA-complete, dark-mode theming | [packages/widget](./packages/widget/README.md) |
+| Servidor MCP | servidor MCP stdio con las herramientas `normalize_address` + `search_addresses` — para Claude Desktop, Cursor o cualquier agente MCP | [packages/mcp](./packages/mcp/README.md) |
+| Servidor de cascada | API HTTP Hono (`packages/cascade/`) que reemplaza al router externo `geoapi.es`, sirviendo la cascada provincia→municipio→CP (búsquedas de sub-ms) | [packages/cascade](./packages/cascade/README.md) |
+| Widget | Web Component Stencil `<address-search-es>` + wrapper React: resultados agrupados, detección automática de CP, ARIA completo, tema oscuro | [packages/widget](./packages/widget/README.md) |
 
-## Quick start
+## Inicio rápido
 
-Prerequisites: Node 22+, pnpm 9+, Docker.
+Requisitos: Node 22+, pnpm 9+, Docker.
 
 ```bash
 git clone https://github.com/Karim-capatlas/spain-address-autocomplete
 cd spain-address-autocomplete
 pnpm install --frozen-lockfile
 
-# 1. Generate the dataset from INE open data (the snapshot is not committed).
+# 1. Generar el dataset desde datos abiertos del INE (el snapshot no está en git)
 pnpm exec tsx packages/etl/src/index.ts run --year 2026 --month 1
-#    → packages/data/snapshots/callejero_2026-01.jsonl.gz (~21 MB, 749,261 records)
+#    → packages/data/snapshots/callejero_2026-01.jsonl.gz (~21 MB, 749.261 registros)
 
-# 2. Start the local Typesense backend (HTTP @127.0.0.1:8108, key xyz)
+# 2. Iniciar el backend Typesense local (HTTP @127.0.0.1:8108, clave xyz)
 docker compose up -d typesense
 curl http://127.0.0.1:8108/health   # → {"ok":true}
 
-# Backend selection (automatic): Typesense is default. Only set the following to
-# switch the MCP/proxy to Upstash Redis Search (opt-in):
+# Selección de backend (automática): Typesense es el por defecto. Solo configura lo
+# siguiente para cambiar el MCP/proxy a Upstash Redis Search (opcional):
 #   export USE_UPSTASH=1
 #   export UPSTASH_REDIS_REST_URL="https://<db>.upstash.io"
 #   export UPSTASH_REDIS_REST_TOKEN="<token>"
 ```
 
-### Demo A — cascade server (fully local, no cloud account)
+### Demo A — servidor de cascada (todo local, sin cuenta cloud)
 
 ```bash
 pnpm cascade:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
@@ -121,24 +151,24 @@ curl -G "localhost:5978/api/geo/municipios" --data-urlencode "provincia=28"   # 
 curl "localhost:5978/api/geo/validate-cp?municipio=28079&cp=28013"     # → {"valid":true,"ineCode":"28079"}
 ```
 
-### Demo B — MCP server (Typesense by default)
+### Demo B — servidor MCP (Typesense por defecto)
 
 ```bash
-# Import the street index into Typesense (~5–7 min):
+# Importar el índice de calles en Typesense (~5–7 min)
 pnpm typesense:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop --batch-size 1000
 
-# Run the server (stdio JSON-RPC on stdin/stdout):
+# Ejecutar el servidor (JSON-RPC stdio por stdin/stdout)
 pnpm --filter @spain-address/mcp start
 ```
 
-`createSearchClient()` picks Typesense (local Docker on `127.0.0.1:8108`) by default;
-Upstash is used only when `USE_UPSTASH=1` **and** `UPSTASH_REDIS_REST_URL`/`TOKEN`
-are set. The Typesense path is live-verified against `callejero_es` (749,261 docs);
-the Upstash path is unit-tested.
+`createSearchClient()` elige **Typesense** (local Docker en `127.0.0.1:8108`) por defecto;
+Upstash solo cuando se define `USE_UPSTASH=1` **y** `UPSTASH_REDIS_REST_URL`/`TOKEN`.
+La ruta Typesense está verificada en vivo contra `callejero_es` (749.261 documentos);
+la ruta Upstash está cubierta por tests unitarios.
 
-### Use it from Claude Desktop
+### Úsalo desde Claude Desktop
 
-Default = local Typesense (run `docker compose up -d typesense` on the host):
+Por defecto = Typesense local (ejecuta `docker compose up -d typesense` en el equipo):
 
 ```jsonc
 // ~/Library/Application Support/Claude/claude_desktop_config.json
@@ -147,7 +177,7 @@ Default = local Typesense (run `docker compose up -d typesense` on the host):
     "spain-address": {
       "command": "pnpm",
       "args": ["--filter", "@spain-address/mcp", "start"],
-      "cwd": "/absolute/path/to/spain-address-autocomplete",
+      "cwd": "/ruta/absoluta/a/spain-address-autocomplete",
       "env": {
         "TYPESENSE_HOST": "127.0.0.1",
         "TYPESENSE_PORT": "8108",
@@ -159,53 +189,53 @@ Default = local Typesense (run `docker compose up -d typesense` on the host):
 }
 ```
 
-For the **Upstash Redis Search** (cloud) path instead, set `USE_UPSTASH=1` plus
-`UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` in `env` and omit the
-`TYPESENSE_*` keys — then run `pnpm upstash:import` to seed the Upstash index.
+Para usar **Upstash Redis Search** (nube) en su lugar, define `USE_UPSTASH=1` junto
+con `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` en `env` y omite las claves
+`TYPESENSE_*`; luego ejecuta `pnpm upstash:import` para poblar el índice.
 
-Cursor config and full tool schemas: [packages/mcp/README.md](./packages/mcp/README.md).
+Configuración de Cursor y esquemas completas de herramientas: [packages/mcp/README.md](./packages/mcp/README.md).
 
-## Packages
+## Paquetes
 
-| Package | Purpose |
+| Paquete | Propósito |
 |---|---|
-| [`etl`](./packages/etl) | INE Callejero ETL — fixed-width ISO-8859-1 TRAM/UP parser → normalized JSONL+gzip (749K records) |
-| [`core`](./packages/core) | `AddressRecord` types + backend-agnostic `searchAddresses()` + `createSearchClient()` (Typesense default; Upstash opt-in) |
-| [`typesense`](./packages/typesense) | **Default** Typesense schema + bulk-import CLI (`pnpm typesense:import`) |
-| [`upstash`](./packages/upstash) | Upstash Redis Search schema + import CLI (opt-in via `USE_UPSTASH=1`, `pnpm upstash:import`) |
-| [`mcp`](./packages/mcp) | stdio MCP server — `normalize_address` + `search_addresses` |
-| [`cascade`](./packages/cascade) | Hono cascade server (`/api/geo/*`) backed by the `cascade_es` Typesense collection (HTTP, Worker-reachable) |
-| [`proxy`](./packages/proxy) | BFF proxy (`GET /api/address-search`) — keeps search credentials server-side |
-| [`widget`](./packages/widget) | `<address-search-es>` Stencil web component + React wrapper |
-| [`data`](./packages/data) | Snapshot metadata |
+| [`etl`](./packages/etl) | ETL del Callejero INE — parser ISO-8859-1 de ancho fijo (TRAM/UP) → JSONL+gzip normalizado (749K registros) |
+| [`core`](./packages/core) | tipos `AddressRecord` + `searchAddresses()` (Typesense por defecto; Upstash opcional) + fábrica `createSearchClient()` |
+| [`typesense`](./packages/typesense) | **Backend por defecto**: esquema Typesense + CLI de importación por lotes (`pnpm typesense:import`) |
+| [`upstash`](./packages/upstash) | Esquema + CLI de importación para Upstash Redis Search (opt-in vía `USE_UPSTASH=1`, `pnpm upstash:import`) |
+| [`mcp`](./packages/mcp) | servidor MCP stdio — `normalize_address` + `search_addresses` |
+| [`cascade`](./packages/cascade) | servidor Hono (`/api/geo/*`) respaldado por la colección `cascade_es` de Typesense (HTTP/REST) |
+| [`proxy`](./packages/proxy) | proxy BFF (`GET /api/address-search`) — mantiene las credenciales de búsqueda en el servidor |
+| [`widget`](./packages/widget) | componente web Stencil `<address-search-es>` + wrapper React |
+| [`data`](./packages/data) | Metadatos de snapshots |
 
-## Development
+## Desarrollo
 
 ```bash
-pnpm typecheck   # 9/9 packages
-pnpm lint        # 0 errors
-pnpm build        # 9/9 packages
-pnpm test         # 138 tests (13 files)
+pnpm typecheck   # 9/9 paquetes
+pnpm lint        # 0 errores
+pnpm build        # 9/9 paquetes
+pnpm test         # 138 tests (13 archivos)
 pnpm test:e2e     # Playwright (widget)
 ```
 
 Stack: TypeScript (strict, ESM) · pnpm 9 workspaces · Turborepo · TS 5.5 / Node 22 ·
 Vitest 2 · tsup · ESLint flat config · Prettier · Hono (BFFs) · Stencil (widget) ·
-Typesense (store). Upstash Redis Search is retained as an **opt-in** backend
-(`packages/upstash`); it is not on the default code path.
+Typesense (almacen). Upstash Redis Search se mantiene como backend **opcional**
+(`packages/upstash`).
 
-## Documentation
+## Documentación
 
-- [docs/vps-deploy.md](./docs/vps-deploy.md) — **deploy the demo to a VPS behind a Cloudflare Tunnel** (`calle.alami.es`)
-- [PRODUCT.md](./PRODUCT.md) — problem statement, design decisions, data reference
-- [ROADMAP.md](./ROADMAP.md) — phased plan and current status
-- [AGENTS.md](./AGENTS.md) — full development context for AI agents (deepest technical doc)
+- [docs/vps-deploy.md](./docs/vps-deploy.md) — **desplegar la demo en un VPS detrás de un túnel Cloudflare** (`calle.alami.es`)
+- [PRODUCT.md](./PRODUCT.md) — enunciado del problema, decisiones de diseño, referencia de datos
+- [ROADMAP.md](./ROADMAP.md) — plan fase por fase y estado actual
+- [AGENTS.md](./AGENTS.md) — contexto técnico profundo para agentes de IA
 
-## Data attribution
+## Atribución de datos
 
 - **INE Callejero / Municipios (UP)** — © Instituto Nacional de Estadística (INE), [ine.es](https://www.ine.es/dyngs/DAB/es/index.htm?cid=1390)
-- **CNIG CartoCiudad** (optional coordinates) — © Instituto Geográfico Nacional de España, CC BY 4.0
+- **CNIG CartoCiudad (CC BY 4.0):** mencionar "© Instituto Geográfico Nacional de España" en cualquier UI que muestre coordenadas.
 
-## License
+## Licencia
 
-MIT (code). CC BY 4.0 applies to data derived from CartoCiudad.
+MIT (código). CC BY 4.0 para los datos derivados de CartoCiudad.
