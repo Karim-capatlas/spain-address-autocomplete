@@ -157,7 +157,7 @@ scp packages/data/snapshots/callejero_2026-01.jsonl.gz \
 **Option B:** regenerate on the VPS (downloads from INE, slower):
 
 ```bash
-cd packages/etl && pnpm exec tsx src/index.ts run --year 2026 --month 1   # tsx is a per-package devDep; `pnpm exec tsx` from the workspace root does not resolve on a fresh install
+pnpm exec tsx packages/etl/src/index.ts run --year 2026 --month 1   # tsx is now a root devDependency
 ```
 
 ---

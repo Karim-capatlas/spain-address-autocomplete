@@ -306,13 +306,10 @@ pnpm lint           # 0 errors
 pnpm build          # 9/9
 pnpm test           # 138 tests (13 files)
 
-# ETL — tsx is a per-package devDep (not root-hoisted), so invoke it from
-# packages/etl. `pnpm exec tsx` from the workspace root does NOT resolve on a
-# fresh install — either `cd packages/etl && pnpm exec tsx` or
-# `pnpm --filter @spain-address/etl exec tsx` works.
-cd packages/etl && pnpm exec tsx src/index.ts run   --year 2026 --month 1 --provinces 28 \
+# ETL
+pnpm exec tsx packages/etl/src/index.ts run   --year 2026 --month 1 --provinces 28 \
   --skip-download
-cd packages/etl && pnpm exec tsx src/index.ts validate ../data/snapshots/callejero_2026-01_28.jsonl
+pnpm exec tsx packages/etl/src/index.ts validate packages/data/snapshots/callejero_2026-01_28.jsonl
 
 # Typesense (run `pnpm build` first — core's client ships in dist/; the
 # `preimport` hook runs `pnpm -r build` automatically, so this is enough):

@@ -96,11 +96,7 @@ cd spain-address-autocomplete
 pnpm install --frozen-lockfile
 
 # 1. Generate the dataset from INE open data (the snapshot is not committed).
-#    NOTE: tsx is a per-package devDependency, NOT root-hoisted, so the command
-#    must run from packages/etl (root `pnpm exec tsx …` does not resolve on a
-#    fresh install — see AGENTS.md). Run from inside packages/etl:
-cd packages/etl
-pnpm exec tsx src/index.ts run --year 2026 --month 1
+pnpm exec tsx packages/etl/src/index.ts run --year 2026 --month 1
 #    → packages/data/snapshots/callejero_2026-01.jsonl.gz (~21 MB, 749,261 records)
 
 # 2. Start the local Typesense backend (HTTP @127.0.0.1:8108, key xyz)
