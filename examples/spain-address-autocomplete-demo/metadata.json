@@ -1,0 +1,6 @@
+{
+  "name": "Spain Address Autocomplete",
+  "description": "Spanish Address Normalization, Autocomplete & MCP Server developer platform and interactive sandbox.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

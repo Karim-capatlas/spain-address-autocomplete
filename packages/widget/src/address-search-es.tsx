@@ -5,9 +5,10 @@
  * `@stencil/react-output-target` (configured in stencil.config.ts) generates the
  * typed React / Vue / Angular wrappers from this single component.
  *
- * Designed for the national index (749k docs / 52 provinces): results are
- * grouped by `municipio`, a 5-digit query routes to `filter_by cp`, and groups
- * are capped by `maxGroups` / expandable.
+ * v2 redesign: first-class combobox — selection fills the input, optional inline
+ * structured address card (`detail`), three sizes (`size`, default Joy *small*),
+ * sticky non-interactive group labels, error row with retry, and a footer
+ * "Powered by" backlink + "Datos © INE" attribution (replaces "Ver todo").
  */
 import {
   Component,
@@ -25,19 +26,17 @@ import {
 // @ts-expect-error -- no public .d.ts; global.d.ts declares a loose `h` + permissive JSX so custom attrs stay typed
 import { h } from '@stencil/core/internal/client'
 /* eslint-enable @typescript-eslint/no-unused-vars */
-import { createTypesenseClient, searchAddressesTypesense } from '@spain-address/core'
+import { SearchController } from './utils/search-controller'
+import { getProvinciaName } from './utils/provincias'
+import { iconClear, iconCheck, iconPin, iconRetry } from './utils/icons'
+import { flatItems, activeOptionId, renderOptionGroups } from './utils/option-list'
+import { parseDomicilio, merge } from '@spain-address/core'
 
 /** @stencil/core's published types for the records this component renders. */
 type AddressRecord = import('@spain-address/core').AddressRecord
 type SearchGroup = import('@spain-address/core').SearchGroup
-type TypesenseClient = import('@spain-address/core').TypesenseClient
-type SearchResult = import('@spain-address/core').SearchResult
-
-interface NavNode {
-  kind: 'header' | 'item'
-  g: number
-  i?: number
-}
+type DomicilioUnit = import('@spain-address/core').DomicilioUnit
+type DireccionNormalizada = import('@spain-address/core').DireccionNormalizada
 
 @Component({
   tag: 'address-search-es',
@@ -48,15 +47,18 @@ export class AddressSearchEs {
   @Element() el!: HTMLElement
   private input?: HTMLInputElement
   private debounceHandle: ReturnType<typeof setTimeout> | undefined
-  private collapsed = new Set<string>() // municipio_id -> collapsed
-  /** Monotonic search counter: responses from stale queries are discarded. */
-  private searchSeq = 0
-  /** AbortController for the in-flight search (proxy fetch + direct client). */
-  private abortCtrl: AbortController | undefined
-  /** Current result cap (starts at `maxGroups`, grows via "Ver todo"). */
-  private limit = 0
-  /** Last accepted selection (drives the confirmation chip). */
+  /** Shared search engine (debounce stays here; abort/race-guard in the controller). */
+  private controller = new SearchController(() => ({
+    endpoint: this.endpoint,
+    typesenseHost: this.typesenseHost,
+    typesensePort: this.typesensePort,
+    typesenseApiKey: this.typesenseApiKey,
+    typesenseProtocol: this.typesenseProtocol,
+  }))
+  /** Last accepted selection (drives the inline ✓ + detail card/chip). */
   @State() selected: AddressRecord | null = null
+  /** Parsed "datos del domicilio" unit from the last typed query (input-side only). */
+  @State() unidad: DomicilioUnit | null = null
 
   /* ===== observed attributes (public API) ===== */
   /**
@@ -80,14 +82,28 @@ export class AddressSearchEs {
   @Prop({ reflect: true }) detectCp = true
   @Prop({ reflect: true }) placeholder = 'Escribe una calle, municipio o código postal…'
   /** Max municipio groups rendered (Typesense `per_page`). */
-  @Prop({ reflect: true }) maxGroups = 8
+  @Prop({ reflect: true }) maxGroups = 3
   /** Max streets per group (Typesense `group_limit`). */
   @Prop({ reflect: true }) groupLimit = 3
   /** Input debounce in ms before issuing a search. */
   @Prop({ reflect: true }) debounceMs = 250
+  /** Control size — MUI Joy Input metrics. Default `sm` (32px / 0.875rem). */
+  @Prop({ reflect: true }) size: 'sm' | 'md' | 'lg' = 'sm'
+  /**
+   * How the accepted selection is surfaced:
+   *  - `none` (default): the selected label fills the input, inline ✓ only;
+   *  - `chip`: legacy green confirmation chip below the input;
+   *  - `inline-card`: structured normalized-address breakdown inside the widget.
+   */
+  @Prop({ reflect: true }) detail: 'none' | 'chip' | 'inline-card' = 'none'
+  /** Footer "Powered by" backlink href. */
+  @Prop({ reflect: true }) poweredByHref = 'https://calle.alami.es'
+  /** Footer "Powered by" backlink label. */
+  @Prop({ reflect: true }) poweredByLabel = 'calle.alami.es'
 
   /* ===== events ===== */
   @Event() addressSelected!: EventEmitter<AddressRecord>
+  @Event() addressNormalized!: EventEmitter<DireccionNormalizada>
   @Event() addressCleared!: EventEmitter<void>
   @Event() scopeChanged!: EventEmitter<{ provincia: string }>
   @Event() error!: EventEmitter<{ message: string; code?: number }>
@@ -107,133 +123,6 @@ export class AddressSearchEs {
     return AddressSearchEs.CP_RE.test(v.trim())
   }
 
-  private client(): TypesenseClient | null {
-    if (this.endpoint) return null // proxy mode: no direct Typesense access
-    if (!this.typesenseHost) {
-      const msg =
-        'either attribute "endpoint" (proxy mode) or "typesense-host" + "typesense-api-key" (direct mode) is required'
-      this.errorMsg = msg
-      this.error.emit({ message: msg })
-      return null
-    }
-    if (!this.typesenseApiKey) {
-      const msg = 'attribute "typesense-api-key" is required in direct mode'
-      this.errorMsg = msg
-      this.error.emit({ message: msg })
-      return null
-    }
-    return createTypesenseClient({
-      config: {
-        host: this.typesenseHost,
-        port: this.typesensePort,
-        protocol: this.typesenseProtocol,
-        apiKey: this.typesenseApiKey,
-      },
-    })
-  }
-
-  /** Proxy-mode search: GET `${endpoint}?q=…` returning a `SearchResult` JSON. */
-  private async searchViaEndpoint(cp: boolean, q: string): Promise<SearchResult> {
-    const url = new URL(this.endpoint, window.location.href)
-    url.searchParams.set('q', cp ? '' : q)
-    if (cp) url.searchParams.set('cp', q)
-    url.searchParams.set('per_page', String(this.effectiveLimit()))
-    url.searchParams.set('group_limit', String(this.groupLimit))
-    if (this.scopeProvincia) url.searchParams.set('provincia', this.scopeProvincia)
-    const municipio = this.scopeMunicipalidad()
-    if (municipio) url.searchParams.set('municipio', municipio)
-    const res = await fetch(url.toString(), {
-      headers: { accept: 'application/json' },
-      signal: this.abortCtrl?.signal,
-    })
-    if (!res.ok) {
-      const body = await res.text().catch(() => '')
-      throw Object.assign(new Error(`proxy ${res.status}: ${body.slice(0, 200)}`), { status: res.status })
-    }
-    return (await res.json()) as SearchResult
-  }
-
-  /** Current result cap: `limit` once "Ver todo" has grown it, else `maxGroups`. */
-  private effectiveLimit(): number {
-    return this.limit > 0 ? this.limit : this.maxGroups
-  }
-
-  private async doSearch(): Promise<void> {
-    const q = this.query.trim()
-    if (q.length < 2) {
-      this.clearResults()
-      this.open = false
-      return
-    }
-    // Cancel any in-flight request and bump the sequence — only the newest
-    // search may commit its results (autocomplete race guard).
-    this.abortCtrl?.abort()
-    this.abortCtrl = new AbortController()
-    const seq = ++this.searchSeq
-    const isCurrent = (): boolean => seq === this.searchSeq
-    const aborted = (e: unknown): boolean =>
-      e instanceof DOMException && e.name === 'AbortError'
-
-    const cp = this.detectCp && this.isFiveDigits(q)
-    let result: SearchResult
-    try {
-      if (this.endpoint) {
-        // Proxy mode — fetch() already honours abortCtrl via searchViaEndpoint.
-        this.loading = true
-        result = await this.searchViaEndpoint(cp, q)
-      } else {
-        const client = this.client()
-        if (!client) return
-        this.loading = true
-        result = await searchAddressesTypesense(
-          {
-            query: cp ? '' : q,
-            perPage: this.effectiveLimit(),
-            groupLimit: this.groupLimit,
-            filterByCP: cp ? q : undefined,
-            filterByProvincia: this.scopeProvincia || undefined,
-            filterByMunicipio: this.scopeMunicipalidad(),
-            // §3.1.7: bold matched tokens inside the result label.
-            highlight: true,
-          },
-          { client },
-        )
-      }
-    } catch (e: unknown) {
-      if (!aborted(e)) this.handleError(e)
-      return
-    } finally {
-      if (isCurrent()) this.loading = false
-    }
-    if (!isCurrent()) return // a newer search superseded this one
-    this.groups = result.groups
-    this.total = result.total
-    this.open = true
-    this.focused = result.groups.length ? 0 : -1
-    this.errorMsg = ''
-  }
-
-  /** "Ver todo": grow the cap to the full match count and re-search. */
-  private loadMore(): void {
-    this.limit = Math.min(this.total, 50)
-    void this.doSearch()
-  }
-
-  private handleError(e: unknown): void {
-    const msg = e instanceof Error ? e.message : String(e)
-    // @ts-expect-error HTTP errors carry a status
-    const code = e?.status
-    if (msg !== 'AbortError' && !msg.includes('aborted')) {
-      this.errorMsg = msg
-      this.error.emit({ message: msg, code })
-      this.open = false
-    }
-  }
-
-  private scopeMunicipalidad(): string | undefined {
-    return this.scopeMunicipio || undefined
-  }
-
   private scheduleSearch(): void {
     if (this.debounceHandle) clearTimeout(this.debounceHandle)
     this.loading = true
@@ -241,6 +130,45 @@ export class AddressSearchEs {
       this.debounceHandle = undefined
       void this.doSearch()
     }, this.debounceMs)
+  }
+
+  private async doSearch(): Promise<void> {
+    const q = this.query.trim()
+    if (q.length < 2) {
+      this.clearResults()
+      this.open = false
+      this.loading = false
+      return
+    }
+    this.loading = true
+    const outcome = await this.controller.search({
+      query: q,
+      perPage: this.maxGroups,
+      groupLimit: this.groupLimit,
+      detectCp: this.detectCp,
+      provincia: this.scopeProvincia || undefined,
+      municipio: this.scopeMunicipio || undefined,
+    })
+    // A newer search superseded this one (or it was aborted) — leave `loading`
+    // and the result state to the newest call.
+    if (outcome.status === 'superseded') return
+    this.loading = false
+    if (outcome.status === 'error') {
+      this.handleError(outcome.message, outcome.code)
+      return
+    }
+    this.groups = outcome.result.groups
+    this.total = outcome.result.total
+    this.open = true
+    this.focused = outcome.result.groups.length ? 0 : -1
+    this.errorMsg = ''
+  }
+
+  /** Keep the menu OPEN on failure and render an error row + retry (finding #1). */
+  private handleError(message: string, code?: number): void {
+    this.errorMsg = message
+    this.error.emit({ message, code })
+    this.open = true
   }
 
   private clearResults(): void {
@@ -253,6 +181,8 @@ export class AddressSearchEs {
   private onInput = (e: Event): void => {
     const value = (e.target as HTMLInputElement).value
     this.query = value
+    this.selected = null
+    this.unidad = null
     if (value.trim().length >= 2) {
       this.scheduleSearch()
     } else {
@@ -268,7 +198,9 @@ export class AddressSearchEs {
   }
 
   private onBlur = (): void => {
-    // defocus only if focus leaves the whole component (not a menu click)
+    // Close only when focus leaves the whole component (not a menu/footer click).
+    // `document.activeElement` is the host while focus sits inside the shadow
+    // root, so `el.contains(activeElement)` stays true for internal moves.
     setTimeout(() => {
       if (!this.el.contains(document.activeElement as Node)) this.open = false
     }, 120)
@@ -276,8 +208,8 @@ export class AddressSearchEs {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (!this.open) return
-    const nav = this.navNodes()
-    if (nav.length === 0) {
+    const items = flatItems(this.groups)
+    if (items.length === 0) {
       if (e.key === 'Escape') {
         this.open = false
         this.focused = -1
@@ -287,25 +219,15 @@ export class AddressSearchEs {
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      this.focused = (this.focused + 1) % nav.length
+      this.focused = (this.focused + 1) % items.length
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      this.focused = (this.focused - 1 + nav.length) % nav.length
+      this.focused = (this.focused - 1 + items.length) % items.length
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      const focusedIdx = this.focused >= 0 ? this.focused : 0
-      const node = nav[focusedIdx]
-      if (!node) return
-      if (node.kind === 'header') {
-        const g = this.groups[node.g]
-        this.toggleGroup(g.municipio_id)
-      } else {
-        const g = this.groups[node.g]
-        const item = g?.items[node.i as number]
-        if (item) {
-          this.selectItem(item)
-        }
-      }
+      const idx = this.focused >= 0 ? this.focused : 0
+      const item = items[idx]
+      if (item) this.selectItem(item)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       this.open = false
@@ -322,11 +244,15 @@ export class AddressSearchEs {
    */
   @Method()
   async clear(): Promise<void> {
+    if (this.debounceHandle) clearTimeout(this.debounceHandle)
+    this.controller.cancel()
     this.query = ''
     this.clearResults()
     this.selected = null
+    this.unidad = null
     this.open = false
     this.focused = -1
+    this.loading = false
     this.addressCleared.emit()
     this.input?.focus()
   }
@@ -340,11 +266,8 @@ export class AddressSearchEs {
   @Method()
   async setSelection(record: AddressRecord | null): Promise<void> {
     this.selected = record
-    if (record) {
-      this.query = record.label ?? ''
-    } else {
-      this.query = ''
-    }
+    this.unidad = null
+    this.query = record ? record.label ?? '' : ''
     this.clearResults()
     this.open = false
     this.focused = -1
@@ -356,7 +279,10 @@ export class AddressSearchEs {
 
   private onUnselect = (): void => {
     this.selected = null
+    this.unidad = null
+    this.query = ''
     this.addressCleared.emit()
+    this.input?.focus()
   }
 
   private onUnscope = (): void => {
@@ -366,51 +292,36 @@ export class AddressSearchEs {
     void this.doSearch()
   }
 
+  private onRetry = (): void => {
+    this.errorMsg = ''
+    void this.doSearch()
+  }
+
   private selectItem(item: AddressRecord): void {
+    const typed = this.query
     this.addressSelected.emit(item)
     this.selected = item
-    this.query = ''
+    // Parse the unit ("datos del domicilio") out of the typed query and merge it
+    // onto the matched street record — input-side only, never indexed.
+    const { unidad, heuristic } = parseDomicilio(typed)
+    this.unidad = unidad
+    this.addressNormalized.emit(
+      merge(item, unidad, heuristic ? 'parcial' : 'exact'),
+    )
+    // Selection fills the input with the label (consistent with `setSelection`).
+    this.query = item.label ?? ''
     this.clearResults()
     this.open = false
+    this.focused = -1
     this.input?.focus()
   }
 
-  private toggleGroup(id: string): void {
-    if (this.collapsed.has(id)) this.collapsed.delete(id)
-    else this.collapsed.add(id)
-  }
-
-  /* ===== navigation ===== */
-  private navNodes(): NavNode[] {
-    const out: NavNode[] = []
-    this.groups.forEach((g, gi) => {
-      out.push({ kind: 'header', g: gi })
-      if (!this.collapsed.has(g.municipio_id)) {
-        g.items.forEach((_, i) => out.push({ kind: 'item', g: gi, i }))
-      }
-    })
-    return out
-  }
-
+  /* ===== navigation (flat options only — headers are non-interactive) ===== */
   private activeId(): string | undefined {
-    if (this.focused < 0) return undefined
-    const nav = this.navNodes()
-    const node = nav[this.focused]
-    if (!node) return undefined
-    return node.kind === 'header'
-      ? `aes-h-${node.g}`
-      : `aes-i-${node.g}-${node.i}`
+    return activeOptionId(this.groups, this.focused, 'aes')
   }
 
-  private isFocused(node: NavNode): boolean {
-    const nav = this.navNodes()
-    const idx = nav.findIndex(
-      (n) => node.kind === n.kind && n.g === node.g && (node.i ?? -1) === (n.i ?? -1),
-    )
-    return idx === this.focused
-  }
-
-  /** Scroll the focused option into view after each relayer. */
+  /** Scroll the focused option into view after each re-render. */
   componentDidUpdate(): void {
     const id = this.activeId()
     if (id) {
@@ -419,23 +330,24 @@ export class AddressSearchEs {
     }
   }
 
+  disconnectedCallback(): void {
+    if (this.debounceHandle) clearTimeout(this.debounceHandle)
+    this.controller.cancel()
+  }
+
   render() {
     const cpMode = this.detectCp && this.isFiveDigits(this.query.trim())
     const count = this.groups.length
-    const showingFooter = this.open && this.total > count && count > 0
+    const showFooter = this.open && !this.errorMsg && count > 0
+    const showProgress = this.loading && count > 0
 
     return (
-      <div class={{ 'aes': true, open: this.open }}>
+      <div class={{ aes: true, open: this.open }}>
         <label class="aes-sr" htmlFor="aes-input">
           Buscar calle, municipio o código postal
         </label>
-        <div
-          class={{
-            'aes-input-row': true,
-            loading: this.loading,
-          }}
-          id="input-row"
-        >
+
+        <div class={{ 'aes-input-row': true, loading: this.loading }} id="input-row">
           <input
             ref={(el: HTMLInputElement | undefined) => (this.input = el)}
             id="aes-input"
@@ -450,21 +362,36 @@ export class AddressSearchEs {
             onBlur={this.onBlur}
             aria-autocomplete="list"
             aria-expanded={this.open}
-            aria-controls="aes-menu"
+            aria-controls="aes-listbox"
             aria-activedescendant={this.activeId()}
             aria-label={cpMode ? 'Código postal' : 'Buscar dirección'}
             autoComplete="off"
           />
-          <span class="aes-spinner" aria-hidden="true" />
-          <button class="aes-clear" aria-label="Borrar" type="button" onClick={this.onClear}>
-            ✕
-          </button>
+          <div class="aes-trailing">
+            {this.selected && !this.loading ? (
+              <span class="aes-check" aria-hidden="true">
+                {iconCheck()}
+              </span>
+            ) : null}
+            {this.loading ? <span class="aes-spinner" aria-hidden="true" /> : null}
+            {!this.loading && this.query ? (
+              <button class="aes-clear" aria-label="Borrar" type="button" onClick={this.onClear}>
+                {iconClear()}
+              </button>
+            ) : null}
+          </div>
         </div>
 
-        {this.selected ? (
+        {showProgress ? (
+          <div class="aes-progress" aria-hidden="true">
+            <span />
+          </div>
+        ) : null}
+
+        {this.selected && this.detail === 'chip' ? (
           <div class="aes-selected-chip" role="status">
             <span class="aes-selected-check" aria-hidden="true">
-              ✓
+              {iconCheck()}
             </span>
             <span class="aes-selected-label">{this.selected.label}</span>
             <button
@@ -472,49 +399,78 @@ export class AddressSearchEs {
               type="button"
               onClick={this.onUnselect}
             >
-              ✕
+              {iconClear()}
             </button>
           </div>
         ) : null}
+
+        {this.selected && this.detail === 'inline-card' ? this.renderCard(this.selected) : null}
 
         {this.scopeProvincia ? (
           <div class="aes-scope-chip">
-            <span>📍 {this.scopeProvincia}</span>
+            <span class="aes-scope-pin" aria-hidden="true">
+              {iconPin()}
+            </span>
+            <span>{getProvinciaName(this.scopeProvincia)}</span>
             <button aria-label="Quitar filtro de provincia" type="button" onClick={this.onUnscope}>
-              ✕
+              {iconClear()}
             </button>
           </div>
         ) : null}
 
-        <div
-          class="aes-status aes-sr"
-          role="status"
-          aria-live="polite"
-        >{this.open ? `${this.total} resultados` : ''}</div>
+        <div class="aes-status aes-sr" role="status" aria-live="polite">
+          {this.open ? `${this.total} resultados` : ''}
+        </div>
 
-        <div class="aes-menu" id="aes-menu" role="listbox" aria-hidden={!this.open} tabIndex={-1}>
+        <div class="aes-menu" aria-hidden={!this.open}>
           {this.errorMsg ? (
-            <div class="aes-empty">{this.errorMsg}</div>
-          ) : this.loading ? (
-            this.renderSkeleton()
-          ) : this.groups.length === 0 && this.open ? (
-            this.query.trim() ? (
-              <div class="aes-empty">
-                No se encontraron resultados para <b>{this.query.trim()}</b>.
-              </div>
-            ) : null
+            <div class="aes-error" role="alert">
+              <span class="aes-error-msg">{this.errorMsg}</span>
+              <button class="aes-retry" type="button" onClick={this.onRetry}>
+                {iconRetry()}
+                <span>Reintentar</span>
+              </button>
+            </div>
           ) : (
-            this.renderGroups()
+            <div
+              class="aes-listbox"
+              id="aes-listbox"
+              role="listbox"
+              aria-label="Resultados de dirección"
+            >
+              {this.loading && count === 0
+                ? this.renderSkeleton()
+                : count === 0 && this.open
+                  ? this.query.trim()
+                    ? (
+                      <div class="aes-empty" role="presentation">
+                        No se encontraron resultados para <b>{this.query.trim()}</b>.
+                      </div>
+                    )
+                    : null
+                  : renderOptionGroups(this.groups, this.focused, (it) => this.selectItem(it), 'aes')}
+            </div>
           )}
-          {showingFooter ? (
+
+          {showFooter ? (
             <div class="aes-footer">
-              <span>
-                Mostrando los {count} primeros de {this.total}
+              <span class="aes-footer-count">
+                {this.total > count
+                  ? `Mostrando los ${count} primeros de ${this.total}`
+                  : `${this.total} resultado${this.total === 1 ? '' : 's'}`}
                 {cpMode ? ' (CP)' : ''}
               </span>
-              <button type="button" onClick={() => this.loadMore()}>
-                Ver todo
-              </button>
+              <span class="aes-footer-right">
+                <a
+                  class="aes-powered"
+                  href={this.poweredByHref}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Powered by {this.poweredByLabel}
+                </a>
+                <span class="aes-ine">Datos © INE</span>
+              </span>
             </div>
           ) : null}
         </div>
@@ -522,103 +478,127 @@ export class AddressSearchEs {
     )
   }
 
-  private renderSkeleton() {
+  /** Structured normalized-address breakdown (ported from examples/vanilla.html). */
+  private renderCard(r: AddressRecord) {
+    const u = this.unidad
     return (
-      <div class="aes-skel-area">
-        <div class="skel-row">
-          <span class="skel-line lab" />
-          <span class="skel-line sub" />
+      <div class="aes-card" role="status">
+        <div class="aes-card-header">
+          <span class="aes-card-title">
+            <span class="aes-card-check" aria-hidden="true">
+              {iconCheck()}
+            </span>
+            Dirección seleccionada
+          </span>
+          <button
+            class="aes-card-close"
+            aria-label="Quitar dirección seleccionada"
+            type="button"
+            onClick={this.onUnselect}
+          >
+            {iconClear()}
+          </button>
         </div>
-        <div class="skel-row">
-          <span class="skel-line lab" />
-          <span class="skel-line sub" />
-        </div>
-        <div class="skel-row">
-          <span class="skel-line lab" />
-          <span class="skel-line sub" />
+        <div class="aes-card-body">
+          <div class="aes-card-field">
+            <span class="aes-card-label">Calle</span>
+            <span class="aes-card-value">{r.via_nombre_completo}</span>
+          </div>
+          {u?.sin_numero ? (
+            <div class="aes-card-field">
+              <span class="aes-card-label">Número</span>
+              <span class="aes-card-value">S/N</span>
+            </div>
+          ) : u?.numero ? (
+            <div class="aes-card-field">
+              <span class="aes-card-label">Número</span>
+              <span class="aes-card-value">{u.numero}</span>
+            </div>
+          ) : null}
+          {u?.piso ? (
+            <div class="aes-card-field">
+              <span class="aes-card-label">Piso</span>
+              <span class="aes-card-value">{u.piso}</span>
+            </div>
+          ) : null}
+          {u?.puerta ? (
+            <div class="aes-card-field">
+              <span class="aes-card-label">Puerta</span>
+              <span class="aes-card-value">{u.puerta}</span>
+            </div>
+          ) : null}
+          {u?.portal ? (
+            <div class="aes-card-field">
+              <span class="aes-card-label">Portal</span>
+              <span class="aes-card-value">{u.portal}</span>
+            </div>
+          ) : null}
+          {u?.bloque ? (
+            <div class="aes-card-field">
+              <span class="aes-card-label">Bloque</span>
+              <span class="aes-card-value">{u.bloque}</span>
+            </div>
+          ) : null}
+          {u?.escalera ? (
+            <div class="aes-card-field">
+              <span class="aes-card-label">Escalera</span>
+              <span class="aes-card-value">{u.escalera}</span>
+            </div>
+          ) : null}
+          {u?.kilometros ? (
+            <div class="aes-card-field">
+              <span class="aes-card-label">Km</span>
+              <span class="aes-card-value">{u.kilometros}</span>
+            </div>
+          ) : null}
+          <div class="aes-card-field">
+            <span class="aes-card-label">Municipio</span>
+            <span class="aes-card-value">{r.municipio}</span>
+          </div>
+          <div class="aes-card-field">
+            <span class="aes-card-label">Provincia</span>
+            <span class="aes-card-value">{r.provincia}</span>
+          </div>
+          <div class="aes-card-field">
+            <span class="aes-card-label">Código postal</span>
+            <span class="aes-card-value">{r.codigo_postal}</span>
+          </div>
+          <div class="aes-card-field">
+            <span class="aes-card-label">Comunidad autónoma</span>
+            <span class="aes-card-value">{r.comunidad_autonoma}</span>
+          </div>
+          <div class="aes-card-meta">
+            <span class="aes-tag">
+              <strong>CPRO</strong>
+              {r.provincia_id}
+            </span>
+            <span class="aes-tag">
+              <strong>CMUN</strong>
+              {r.municipio_id}
+            </span>
+            <span class="aes-tag">
+              <strong>CCAA</strong>
+              {r.comunidad_autonoma_id}
+            </span>
+          </div>
         </div>
       </div>
     )
   }
 
-  /** §3.1.7: render `via_nombre_completo` with Typesense's `<mark>`-wrapped matched
-   *  tokens bolded (e.g. "Travesía `<mark>Calle</mark> <mark>Mayor</mark>`").
-   *  Falls back to the plain name when no highlights are present on the hit. */
-  private renderHighlighted(item: AddressRecord): (string | JSX.Element)[] {
-    const snippet = item.highlights?.find((h) => h.field === 'via_nombre_completo')?.snippet
-    if (!snippet) return [item.via_nombre_completo]
-    const parts: (string | JSX.Element)[] = []
-    const re = /<mark>(.*?)<\/mark>/g
-    let last = 0
-    let m: RegExpExecArray | null
-    while ((m = re.exec(snippet)) !== null) {
-      if (m.index > last) parts.push(snippet.slice(last, m.index))
-      parts.push(<mark>{m[1] ?? ''}</mark>)
-      last = m.index + m[0].length
-    }
-    if (last < snippet.length) parts.push(snippet.slice(last))
-    return parts
-  }
-
-  private renderGroups() {
-    return this.groups.map((g, gi) => {
-      const collapsed = this.collapsed.has(g.municipio_id)
-      const navHeader: NavNode = { kind: 'header', g: gi }
-      return (
-        <div
-          class="aes-group"
-          key={`g-${gi}`}
-          aria-label={`${g.municipio}, ${g.provincia} · ${g.codigo_postal || 'CP'}`}
-          open={collapsed ? 'false' : 'true'}
-        >
-          <div
-            id={`aes-h-${gi}`}
-            class={`aes-group-header${this.isFocused(navHeader) ? ' hi' : ''}`}
-            role="button"
-            tabIndex={0}
-            aria-expanded={!collapsed}
-            onClick={() => this.toggleGroup(g.municipio_id)}
-            onKeyDown={(e: KeyboardEvent) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                this.toggleGroup(g.municipio_id)
-              }
-            }}
-          >
-            <span class="aes-group-via">{g.municipio || g.municipio_id}</span>
-            <span class="aes-group-sub">
-              {g.municipio}, {g.provincia} · {g.codigo_postal || 'CP'}
-            </span>
-            <span class="aes-chevron" aria-hidden="true">
-              ▾
-            </span>
-          </div>
-          <ul class="aes-children" role="presentation">
-            {g.items.map((it, i) => {
-              const navItem: NavNode = { kind: 'item', g: gi, i }
-              return (
-                <li
-                  key={`it-${gi}-${i}`}
-                  id={`aes-i-${gi}-${i}`}
-                  class={`aes-item${this.isFocused(navItem) ? ' hi' : ''}`}
-                  role="option"
-                  aria-selected={false}
-                  aria-label={
-                    it.label ||
-                    `${it.via_nombre_completo}, ${it.municipio} (${it.codigo_postal})`
-                  }
-                  onClick={() => this.selectItem(it)}
-                >
-                  <span class="aes-label">{this.renderHighlighted(it)}</span>
-                  <span class="aes-sub">
-                    {it.municipio}, {it.provincia} · {it.codigo_postal}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
+  private renderSkeleton() {
+    return (
+      <div class="aes-skel-area" role="presentation">
+        <div class="skel-row">
+          <span class="skel-line lab" />
         </div>
-      )
-    })
+        <div class="skel-row">
+          <span class="skel-line lab" />
+        </div>
+        <div class="skel-row">
+          <span class="skel-line lab" />
+        </div>
+      </div>
+    )
   }
 }

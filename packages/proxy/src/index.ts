@@ -15,7 +15,7 @@
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { createSearchClient, searchAddresses } from '@spain-address/core'
+import { createSearchClient, searchAddresses, normalizeDomicilio } from '@spain-address/core'
 import type { SearchDependencies, SearchOptions, SearchResult } from '@spain-address/core'
 
 export type ProxyDependencies = SearchDependencies
@@ -74,6 +74,24 @@ export function createApp(deps: ProxyDependencies): Hono {
   })
 
   app.get('/health', (c) => c.json({ ok: true }))
+
+  // Full normalization: parse the unit out of the input, search the street line,
+  // and return the merged `DireccionNormalizada` (street + "datos del domicilio").
+  app.get('/api/normalize', async (c) => {
+    const q = (c.req.query('q') ?? '').trim()
+    if (!q) return c.json({ error: 'missing q parameter' }, 400)
+    if (q.length > MAX_QUERY_LENGTH) return c.json({ error: 'query too long' }, 400)
+
+    const provincia = (c.req.query('provincia') ?? '').trim() || undefined
+    try {
+      const normalized = await normalizeDomicilio(q, deps, { filterByProvincia: provincia })
+      if (!normalized) return c.json({ error: 'no_match', query: q }, 404)
+      return c.json(normalized)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e)
+      return c.json({ error: message }, 502)
+    }
+  })
 
   return app
 }

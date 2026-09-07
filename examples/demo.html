@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#435ad2" />
+  <meta name="description"
+    content="spain-address-autocomplete — Open-source MCP server for Spanish address normalization. 749K streets, 52 provinces, powered by Typesense." />
+  <title>spain-address-autocomplete — Product Demo</title>
+  <link rel="preconnect" href="https://calle.alami.es" crossorigin />
+  <script type="module">
+    import { defineCustomElement } from '../packages/widget/dist/components/address-search-es.js';
+    defineCustomElement();
+  </script>
+  <style>
+    /* ===== Reset & base (mobile-first) ===== */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      -webkit-text-size-adjust: 100%;
+      scroll-behavior: smooth;
+    }
+
+    :root {
+      --bg: #f8fafc;
+      --fg: #0f172a;
+      --fg-muted: #64748b;
+      --primary: #435ad2;
+      --primary-600: #3749c1;
+      --primary-100: #e0e7ff;
+      --accent: #22c55e;
+      --accent-100: #dcfce7;
+      --border: #e2e8f0;
+      --surface: #ffffff;
+      --surface-sub: #f1f5f9;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+      --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+      --radius: 12px;
+      --radius-lg: 16px;
+      --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --mono: ui-monospace, 'SF Mono', 'Fira Code', Menlo, monospace;
+      --header-h: 52px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1220;
+        --fg: #f1f5f9;
+        --fg-muted: #94a3b8;
+        --primary: #818cf8;
+        --primary-600: #6366f1;
+        --primary-100: #1e1b4b;
+        --accent: #4ade80;
+        --accent-100: #064e3b;
+        --border: #1e293b;
+        --surface: #111827;
+        --surface-sub: #1e293b;
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+      }
+    }
+
+    body {
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--fg);
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ===== Skip link ===== */
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 1rem;
+      z-index: 10000;
+      padding: 0.5rem 1rem;
+      background: var(--primary);
+      color: white;
+      border-radius: 8px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .skip-link:focus {
+      top: 1rem;
+    }
+
+    /* ===== Header ===== */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: var(--header-h);
+      background: rgba(var(--surface), 0.85);
+      backdrop-filter: saturate(180%) blur(16px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1rem;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--fg);
+      text-decoration: none;
+    }
+
+    .logo svg {
+      flex-shrink: 0;
+      color: var(--primary);
+    }
+
+    .badge {
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--primary);
+      background: var(--primary-100);
+      padding: 0.125rem 0.5rem;
+      border-radius: 999px;
+    }
+
+    .header-nav {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .header-nav a {
+      font-size: 0.8125rem;
+      color: var(--fg-muted);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .header-nav a:hover {
+      color: var(--primary);
+    }
+
+    /* ===== Main ===== */
+    main {
+      flex: 1;
+      padding: 1.5rem 1rem;
+    }
+
+    /* ===== Hero ===== */
+    .hero {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .hero h1 {
+      font-size: clamp(1.75rem, 6vw, 2.75rem);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: var(--fg);
+      margin-bottom: 0.75rem;
+    }
+
+    .hero h1 span {
+      color: var(--primary);
+    }
+
+    .hero p {
+      font-size: 1rem;
+      color: var(--fg-muted);
+      max-width: 40ch;
+      margin: 0 auto 1rem;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-family: var(--font);
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 0.6rem 1.25rem;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      box-shadow: var(--shadow-lg);
+      transform: translateY(-1px);
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--primary);
+      border: 1.5px solid var(--primary);
+    }
+
+    .btn-outline:hover {
+      background: var(--primary-100);
+    }
+
+    /* ===== Stats ===== */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      text-align: center;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .stat-value {
+      font-size: 1.375rem;
+      font-weight: 800;
+      color: var(--primary);
+      line-height: 1.2;
+    }
+
+    .stat-label {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.25rem;
+    }
+
+    /* ===== Section ===== */
+    .section {
+      margin-bottom: 2.5rem;
+    }
+
+    .section-header {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--fg);
+      margin-bottom: 0.5rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--primary);
+      display: inline-block;
+    }
+
+    .section-desc {
+      font-size: 0.9375rem;
+      color: var(--fg-muted);
+      margin-bottom: 1.25rem;
+      max-width: 60ch;
+    }
+
+    /* ===== Code block ===== */
+    .code-block {
+      background: #1e293b;
+      color: #e2e8f0;
+      border-radius: var(--radius);
+      padding: 1rem;
+      font-family: var(--mono);
+      font-size: 0.8125rem;
+      line-height: 1.7;
+      overflow-x: auto;
+      white-space: pre;
+      box-shadow: var(--shadow);
+      margin: 0.75rem 0;
+    }
+
+    .code-block .kw {
+      color: #c084fc;
+    }
+
+    .code-block .str {
+      color: #86efac;
+    }
+
+    .code-block .cmt {
+      color: #64748b;
+    }
+
+    .code-block .fn {
+      color: #60a5fa;
+    }
+
+    .code-block .num {
+      color: #fbbf24;
+    }
+
+    .code-block .prop {
+      color: #f472b6;
+    }
+
+    .code-block .tag {
+      color: #f87171;
+    }
+
+    .code-block .attr {
+      color: #38bdf8;
+    }
+
+    /* ===== Use case card ===== */
+    .use-case {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      transition: border-color 0.15s;
+    }
+
+    .use-case:hover {
+      border-color: var(--primary-100);
+    }
+
+    .use-case h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--fg);
+      margin-bottom: 0.375rem;
+    }
+
+    .use-case p {
+      font-size: 0.875rem;
+      color: var(--fg-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .use-case .badge {
+      font-size: 0.625rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--primary);
+      background: var(--primary-100);
+      padding: 0.125rem 0.5rem;
+      border-radius: 999px;
+      margin-right: 0.375rem;
+    }
+
+    /* ===== Widget demo area ===== */
+    .widget-demo {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      padding: 1.5rem;
+      margin: 1rem 0;
+    }
+
+    .widget-demo label {
+      display: block;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--fg-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    address-search-es {
+      --joy-primary: 67 90 210;
+      --joy-surface: var(--surface);
+      --joy-surface-sub: var(--surface-sub);
+      --joy-border: var(--border);
+      --joy-border-f: rgb(67 90 210 / 0.5);
+      --joy-fg: var(--fg);
+      --joy-fg-muted: var(--fg-muted);
+      --joy-shadow-pop: var(--shadow-lg);
+      --joy-shadow-sm: var(--shadow-sm);
+      --joy-skel: var(--surface-sub);
+      --joy-hover-bg: var(--surface-sub);
+      --joy-radius-input: 12px;
+      --joy-radius-menu: var(--radius);
+      --joy-radius-item: 10px;
+      --joy-radius-chip: 999px;
+      --joy-font: var(--font);
+      display: block;
+      width: 100%;
+    }
+
+    address-search-es[data-theme='dark'] {
+      --joy-surface: #1f2531;
+      --joy-fg: #f1f5f9;
+      --joy-fg-muted: #94a3b8;
+      --joy-border: rgba(255, 255, 255, 0.14);
+      --joy-border-f: rgb(147 197 255 / 0.45);
+      --joy-shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.28);
+      --joy-skel: rgba(255, 255, 255, 0.12);
+      --joy-hover-bg: rgba(255, 255, 255, 0.06);
+    }
+
+    /* ===== Result panel ===== */
+    .result-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      margin-top: 1rem;
+    }
+
+    .result-panel:empty {
+      display: none;
+    }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-sub);
+    }
+
+    .result-header h4 {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--fg);
+    }
+
+    .result-body {
+      padding: 1rem;
+    }
+
+    .result-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.125rem;
+      margin-bottom: 0.625rem;
+    }
+
+    .result-field:last-child {
+      margin-bottom: 0;
+    }
+
+    .result-field label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--fg-muted);
+    }
+
+    .result-field span {
+      font-size: 0.875rem;
+      color: var(--fg);
+      font-family: var(--mono);
+    }
+
+    .result-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .meta-tag {
+      font-size: 0.6875rem;
+      font-weight: 500;
+      color: var(--fg-muted);
+      background: var(--surface-sub);
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+    }
+
+    .meta-tag strong {
+      color: var(--fg);
+      margin-right: 0.2rem;
+    }
+
+    /* ===== API reference table ===== */
+    .api-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.75rem 0;
+      font-size: 0.8125rem;
+    }
+
+    .api-table th {
+      text-align: left;
+      padding: 0.625rem 0.75rem;
+      background: var(--surface-sub);
+      border-bottom: 2px solid var(--border);
+      font-weight: 700;
+      color: var(--fg);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .api-table td {
+      padding: 0.625rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--fg);
+      vertical-align: top;
+    }
+
+    .api-table code {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      background: var(--surface-sub);
+      padding: 0.1em 0.3em;
+      border-radius: 3px;
+      color: var(--primary);
+    }
+
+    .api-table .method-get {
+      color: #22c55e;
+      font-weight: 700;
+    }
+
+    .api-table .method-post {
+      color: #f59e0b;
+      font-weight: 700;
+    }
+
+    /* ===== Architecture diagram ===== */
+    .arch-diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: 1.5rem;
+      margin: 1rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .arch-layer {
+      padding: 1rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface-sub);
+    }
+
+    .arch-layer h4 {
+      font-size: 0.8125rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .arch-layer p {
+      font-size: 0.8125rem;
+      color: var(--fg-muted);
+    }
+
+    .arch-arrow {
+      text-align: center;
+      color: var(--fg-muted);
+      font-size: 1.25rem;
+    }
+
+    /* ===== Tabs ===== */
+    .tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 0;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      font-family: var(--font);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--border);
+      background: var(--surface-sub);
+      color: var(--fg-muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tab-btn:first-child {
+      border-radius: var(--radius) 0 0 var(--radius);
+    }
+
+    .tab-btn:last-child {
+      border-radius: 0 var(--radius) var(--radius) 0;
+    }
+
+    .tab-btn.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+
+    .tab-content {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 0 0 var(--radius) var(--radius);
+      padding: 1.25rem;
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* ===== Footer ===== */
+    footer {
+      padding: 1.5rem 1rem;
+      text-align: center;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .footer-links a {
+      font-size: 0.75rem;
+      color: var(--fg-muted);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .footer-links a:hover {
+      color: var(--primary);
+    }
+
+    .copyright {
+      font-size: 0.6875rem;
+      color: var(--fg-muted);
+    }
+
+    /* ===== Mobile-first: small screens (base) ===== */
+    @media (min-width: 400px) {
+      .stats {
+        grid-template-columns: repeat(4, 1fr);
+        max-width: none;
+      }
+    }
+
+    @media (min-width: 640px) {
+      main {
+        padding: 2.5rem 1.5rem;
+      }
+
+      .hero {
+        margin-bottom: 2.5rem;
+      }
+
+      .stats {
+        max-width: none;
+      }
+
+      .widget-demo {
+        max-width: 540px;
+      }
+
+      .arch-diagram {
+        flex-direction: row;
+        flex-wrap: wrap;
+      }
+
+      .arch-layer {
+        flex: 1;
+        min-width: 200px;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .widget-demo {
+        max-width: 600px;
+      }
+
+      .arch-layer {
+        min-width: 250px;
+      }
+    }
+
+    /* ===== Reduced motion ===== */
+    @media (prefers-reduced-motion: reduce) {
+
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* ===== High contrast ===== */
+    @media (prefers-contrast: high) {
+      :root {
+        --border: currentColor;
+        --shadow: none;
+        --shadow-lg: none;
+        --shadow-sm: none;
+      }
+
+      .section-header {
+        outline: 3px solid;
+        outline-offset: 2px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <a href="#search" class="skip-link">Saltar al buscador</a>
+
+  <header role="banner">
+    <a href="https://calle.alami.es" class="logo" target="_blank" rel="noopener noreferrer">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path
+          d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14" />
+        <path d="M3 3v18" />
+        <path d="M9 3v18" />
+        <path d="M15 3v18" />
+        <path d="M21 3v18" />
+        <circle cx="12" cy="19" r="2" />
+      </svg>
+      <span>spain-address-autocomplete</span>
+    </a>
+    <span class="badge">v0.1.0</span>
+    <nav class="header-nav">
+      <a href="#widget">Widget</a>
+      <a href="#api">API</a>
+      <a href="#mcp">MCP</a>
+      <a href="#deploy">Deploy</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ===== Hero ===== -->
+    <section class="hero" aria-labelledby="hero-title">
+      <h1 id="hero-title">Spanish Address <span>Autocomplete</span></h1>
+      <p>Open-source MCP server for Spanish address normalization. Given noisy address text from OCR'd DNI/TIE identity
+        cards, returns structured fields: via type, street name, provincia, municipio, and código postal.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#widget">Try the Widget</a>
+        <a class="btn btn-outline" href="#api">API Reference</a>
+      </div>
+    </section>
+
+    <div class="stats" role="list" aria-label="Project statistics">
+      <div class="stat" role="listitem">
+        <div class="stat-value">749K+</div>
+        <div class="stat-label">Streets</div>
+      </div>
+      <div class="stat" role="listitem">
+        <div class="stat-value">52</div>
+        <div class="stat-label">Provinces</div>
+      </div>
+      <div class="stat" role="listitem">
+        <div class="stat-value">8,106</div>
+        <div class="stat-label">Municipalities</div>
+      </div>
+      <div class="stat" role="listitem">
+        <div class="stat-value">
+          <50ms< /div>
+            <div class="stat-label">Latency</div>
+        </div>
+      </div>
+
+      <!-- ===== Section 1: Web Widget ===== -->
+      <section class="section" id="widget" aria-labelledby="widget-title">
+        <h2 class="section-header" id="widget-title">1 · Web Component</h2>
+        <p class="section-desc">The <code>&lt;address-search-es&gt;</code> StencilJS custom element is
+          framework-agnostic — it works in any HTML page, and generates typed React, Vue, and Angular wrappers
+          automatically.</p>
+
+        <div class="use-case">
+          <h3>Live Demo</h3>
+          <p>Type a street name, municipality, or postal code. The widget groups results by municipality and supports
+            keyboard navigation.</p>
+          <div class="widget-demo">
+            <label id="search-title" for="demo-search">Search any Spanish address</label>
+            <address-search-es id="demo-search" endpoint="https://calle.alami.es/api/address-search"
+              placeholder="Calle, municipio, código postal…" detect-cp data-theme="light"></address-search-es>
+          </div>
+          <div class="result-panel" id="demo-result" aria-live="polite" hidden></div>
+        </div>
+
+        <div class="use-case">
+          <h3>Attributes</h3>
+          <p>All properties are reflected as HTML attributes and can be set declaratively or via JavaScript.</p>
+          <div class="code-block"><span class="cmt">&lt;!-- Proxy mode (recommended for production) --&gt;</span>
+            <span class="tag">&lt;address-search-es</span>
+            <span class="attr">endpoint</span>=<span class="str">"https://calle.alami.es/api/address-search"</span>
+            <span class="attr">placeholder</span>=<span class="str">"Calle, municipio, código postal…"</span>
+            <span class="attr">detect-cp</span>
+            <span class="attr">scope-provincia</span>=<span class="str">"28"</span>
+            <span class="attr">max-groups</span>=<span class="num">8</span>
+            <span class="attr">group-limit</span>=<span class="num">3</span>
+            <span class="tag">&gt;&lt;/address-search-es&gt;</span>
+
+            <span class="cmt">&lt;!-- Direct Typesense mode --&gt;</span>
+            <span class="tag">&lt;address-search-es</span>
+            <span class="attr">typesense-host</span>=<span class="str">"127.0.0.1"</span>
+            <span class="attr">typesense-port</span>=<span class="num">8108</span>
+            <span class="attr">typesense-api-key</span>=<span class="str">"xyz"</span>
+            <span class="attr">typesense-protocol</span>=<span class="str">"http"</span>
+            <span class="tag">&gt;&lt;/address-search-es&gt;</span>
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Events</h3>
+          <p>The widget emits custom events that you can listen to from the light DOM.</p>
+          <div class="code-block"><span class="kw">const</span> widget = document.<span
+              class="fn">getElementById</span>(<span class="str">'address-search'</span>);
+
+            <span class="cmt">// Fired when a user selects an address</span>
+            widget.<span class="fn">addEventListener</span>(<span class="str">'addressSelected'</span>, (e) => {
+            <span class="kw">const</span> addr = e.<span class="prop">detail</span>;
+            console.<span class="fn">log</span>(addr.label, addr.codigo_postal);
+            <span class="cmt">// { via_tipo, via_nombre, via_nombre_completo,
+              // municipio, municipio_id, provincia, provincia_id,
+              // comunidad_autonoma, codigo_postal, label, highlights }</span>
+            });
+
+            <span class="cmt">// Fired when the selection is cleared</span>
+            widget.<span class="fn">addEventListener</span>(<span class="str">'addressCleared'</span>, () => { ... });
+
+            <span class="cmt">// Fired when the province scope changes</span>
+            widget.<span class="fn">addEventListener</span>(<span class="str">'scopeChanged'</span>, (e) => {
+            console.<span class="fn">log</span>(e.<span class="prop">detail</span>.provincia);
+            });
+
+            <span class="cmt">// Fired on errors</span>
+            widget.<span class="fn">addEventListener</span>(<span class="str">'error'</span>, (e) => {
+            console.<span class="fn">error</span>(e.<span class="prop">detail</span>.message, e.<span
+              class="prop">detail</span>.code);
+            });
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Imperative API</h3>
+          <p>Drive the widget programmatically via <code>@Method</code> decorators.</p>
+          <div class="code-block"><span class="kw">const</span> widget = document.<span
+              class="fn">getElementById</span>(<span class="str">'address-search'</span>);
+
+            <span class="cmt">// Clear the widget</span>
+            <span class="kw">await</span> widget.<span class="fn">clear</span>();
+
+            <span class="cmt">// Get the current selection</span>
+            <span class="kw">const</span> addr = <span class="kw">await</span> widget.<span
+              class="fn">getSelection</span>();
+
+            <span class="cmt">// Set a selection programmatically</span>
+            <span class="kw">await</span> widget.<span class="fn">setSelection</span>({
+            label: <span class="str">'Calle Gran Vía, Madrid (28013)'</span>,
+            via_tipo: <span class="str">'Calle'</span>,
+            via_nombre: <span class="str">'Gran Vía'</span>,
+            municipio: <span class="str">'Madrid'</span>,
+            municipio_id: <span class="str">'28079'</span>,
+            provincia: <span class="str">'Madrid'</span>,
+            provincia_id: <span class="str">'28'</span>,
+            codigo_postal: <span class="str">'28013'</span>,
+            });
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>React / Vue / Angular Wrappers</h3>
+          <p>Stencil's <code>@stencil/react-output-target</code> generates typed framework wrappers from the single
+            component source.</p>
+          <div class="code-block"><span class="cmt">// React (auto-generated)</span>
+            <span class="kw">import</span> { AddressSearchEs } <span class="kw">from</span> <span
+              class="str">'@spain-address/widget/react'</span>;
+
+            <span class="kw">function</span> <span class="fn">App</span>() {
+            <span class="kw">return</span> (
+            &lt;AddressSearchEs
+            endpoint=<span class="str">"https://calle.alami.es/api/address-search"</span>
+            detectCp=<span class="kw">={true}</span>
+            onAddressSelected=<span class="kw">={</span>(addr) => <span class="fn">console</span>.<span
+              class="fn">log</span>(addr)<span class="kw">}</span>
+            /&gt;
+            );
+            }
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Section 2: Proxy/BFF API ===== -->
+      <section class="section" id="api" aria-labelledby="api-title">
+        <h2 class="section-header" id="api-title">2 · Proxy / BFF API</h2>
+        <p class="section-desc">The Hono-based backend-for-frontend keeps Typesense credentials server-side. The browser
+          widget calls this endpoint — never the search backend directly.</p>
+
+        <div class="use-case">
+          <h3>Search Addresses</h3>
+          <p>Fuzzy street search with municipio grouping, province filtering, and postal code detection.</p>
+          <div class="code-block"><span class="cmt"># Text search — returns grouped results</span>
+            <span class="fn">curl</span> <span
+              class="str">"https://calle.alami.es/api/address-search?q=gran%20via"</span>
+
+            <span class="cmt"># Postal code lookup — returns all streets in that CP</span>
+            <span class="fn">curl</span> <span class="str">"https://calle.alami.es/api/address-search?cp=28013"</span>
+
+            <span class="cmt"># With province filter</span>
+            <span class="fn">curl</span> <span
+              class="str">"https://calle.alami.es/api/address-search?q=calle&provincia=28"</span>
+
+            <span class="cmt"># With municipality filter</span>
+            <span class="fn">curl</span> <span
+              class="str">"https://calle.alami.es/api/address-search?q=gran&municipio=28079"</span>
+
+            <span class="cmt"># Pagination and grouping</span>
+            <span class="fn">curl</span> <span
+              class="str">"https://calle.alami.es/api/address-search?q=plaza&per_page=10&group_limit=5"</span>
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Response Shape</h3>
+          <p>The response matches <code>SearchResult</code> from <code>@spain-address/core</code>.</p>
+          <div class="code-block">{
+            <span class="prop">total</span>: <span class="num">131</span>,
+            <span class="prop">took_ms</span>: <span class="num">12</span>,
+            <span class="prop">groups</span>: [
+            {
+            <span class="prop">municipio_id</span>: <span class="str">"28079"</span>,
+            <span class="prop">municipio</span>: <span class="str">"Madrid"</span>,
+            <span class="prop">provincia</span>: <span class="str">"Madrid"</span>,
+            <span class="prop">provincia_id</span>: <span class="str">"28"</span>,
+            <span class="prop">codigo_postal</span>: <span class="str">"28013"</span>,
+            <span class="prop">found</span>: <span class="num">42</span>,
+            <span class="prop">items</span>: [
+            {
+            <span class="prop">id</span>: <span class="str">"a3f1b2c4d5e6f7a8"</span>,
+            <span class="prop">via_tipo</span>: <span class="str">"Calle"</span>,
+            <span class="prop">via_nombre</span>: <span class="str">"Gran Vía"</span>,
+            <span class="prop">via_nombre_completo</span>: <span class="str">"Calle Gran Vía"</span>,
+            <span class="prop">municipio</span>: <span class="str">"Madrid"</span>,
+            <span class="prop">codigo_postal</span>: <span class="str">"28013"</span>,
+            <span class="prop">label</span>: <span class="str">"Calle Gran Vía, Madrid (28013)"</span>,
+            <span class="prop">highlights</span>: [{ <span class="prop">field</span>: <span
+              class="str">"via_nombre_completo"</span>, <span class="prop">snippet</span>: <span
+              class="str">"<mark>Gran</mark> <mark>Vía</mark>"</span> }]
+            }
+            ]
+            }
+            ]
+            }
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Health Check</h3>
+          <div class="code-block"><span class="fn">curl</span> <span class="str">"https://calle.alami.es/health"</span>
+            <span class="cmt"># → {"ok": true}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Section 3: Cascade API ===== -->
+      <section class="section" id="cascade" aria-labelledby="cascade-title">
+        <h2 class="section-header" id="cascade-title">3 · Cascade API</h2>
+        <p class="section-desc">Standalone Hono server for the <code>provincia → municipio → código postal</code>
+          dropdown cascade. Replaces the external <code>geoapi.es</code> router with local sub-ms lookups backed by a
+          dedicated <code>cascade_es</code> Typesense collection.</p>
+
+        <div class="use-case">
+          <h3>Endpoints</h3>
+          <table class="api-table">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Endpoint</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="method-get">GET</span></td>
+                <td><code>/api/geo/provincias</code></td>
+                <td>Returns all 52 provinces with <code>{code, name, ccaa}</code></td>
+              </tr>
+              <tr>
+                <td><span class="method-get">GET</span></td>
+                <td><code>/api/geo/municipios?provincia=28</code></td>
+                <td>Returns all municipalities for a province</td>
+              </tr>
+              <tr>
+                <td><span class="method-get">GET</span></td>
+                <td><code>/api/geo/cps?municipio=28079</code></td>
+                <td>Returns all postal codes for a municipality</td>
+              </tr>
+              <tr>
+                <td><span class="method-get">GET</span></td>
+                <td><code>/api/geo/validate-cp?municipio=28079&cp=28001</code></td>
+                <td>Validates that a CP belongs to a municipality</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="use-case">
+          <h3>Usage Examples</h3>
+          <div class="code-block"><span class="cmt"># Get all provinces</span>
+            <span class="fn">curl</span> <span class="str">"https://calle.alami.es/api/geo/provincias"</span>
+            <span class="cmt"># → [{ code:"28", name:"Madrid", ccaa:"Comunidad de Madrid" }, ...]</span>
+
+            <span class="cmt"># Get municipalities in Madrid</span>
+            <span class="fn">curl</span> <span
+              class="str">"https://calle.alami.es/api/geo/municipios?provincia=28"</span>
+            <span class="cmt"># → [{ code:"28079", name:"Madrid", ccaa:"Comunidad de Madrid" }, ...]</span>
+
+            <span class="cmt"># Get postal codes for Madrid city</span>
+            <span class="fn">curl</span> <span class="str">"https://calle.alami.es/api/geo/cps?municipio=28079"</span>
+            <span class="cmt"># → ["28001", "28002", "28003", ..., "28013", ...]</span>
+
+            <span class="cmt"># Validate a postal code</span>
+            <span class="fn">curl</span> <span
+              class="str">"https://calle.alami.es/api/geo/validate-cp?municipio=28079&cp=28001"</span>
+            <span class="cmt"># → {"valid":true,"ineCode":"28079"}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Section 4: MCP Server ===== -->
+      <section class="section" id="mcp" aria-labelledby="mcp-title">
+        <h2 class="section-header" id="mcp-title">4 · MCP Server</h2>
+        <p class="section-desc">Drop-in stdio MCP tools for LLM pipelines. Spawnable from Claude Desktop, Cursor, or any
+          parent OCR pipeline. Implements the JSON-RPC handshake over newline-delimited JSON on stdin/stdout.</p>
+
+        <div class="use-case">
+          <h3>Tool: <code>normalize_address</code></h3>
+          <p>Normalize a noisy Spanish address string (e.g. from DNI/TIE OCR) into structured fields. Returns the single
+            best match.</p>
+          <div class="code-block"><span class="cmt"># MCP JSON-RPC request</span>
+            { <span class="prop">jsonrpc</span>: <span class="str">"2.0"</span>,
+            <span class="prop">id</span>: <span class="num">1</span>,
+            <span class="prop">method</span>: <span class="str">"tools/call"</span>,
+            <span class="prop">params</span>: {
+            <span class="prop">name</span>: <span class="str">"normalize_address"</span>,
+            <span class="prop">arguments</span>: {
+            <span class="prop">text</span>: <span class="str">"calle gran via 12 madrid"</span>,
+            <span class="prop">provincia_id</span>: <span class="str">"28"</span>
+            }
+            }
+            }
+
+            <span class="cmt"># Response</span>
+            { <span class="prop">jsonrpc</span>: <span class="str">"2.0"</span>,
+            <span class="prop">id</span>: <span class="num">1</span>,
+            <span class="prop">result</span>: {
+            <span class="prop">content</span>: [{ <span class="prop">type</span>: <span class="str">"text"</span>, <span
+              class="prop">text</span>: <span class="str">"{\n \"via_tipo\": \"Calle\",\n \"via_nombre\": \"Gran
+              Vía\",\n \"via_nombre_completo\": \"Calle Gran Vía\",\n \"municipio\": \"Madrid\",\n \"municipio_id\":
+              \"28079\",\n \"provincia\": \"Madrid\",\n \"provincia_id\": \"28\",\n \"comunidad_autonoma\": \"Comunidad
+              de Madrid\",\n \"codigo_postal\": \"28013\",\n \"label\": \"Calle Gran Vía, Madrid (28013)\",\n
+              \"confidence\": \"exact\"\n}" }]
+              }
+              }
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Tool: <code>search_addresses</code></h3>
+          <p>Search the Spanish street index (749K records). Returns ranked matches with municipio grouping.</p>
+          <div class="code-block"><span class="cmt"># MCP JSON-RPC request</span>
+            { <span class="prop">jsonrpc</span>: <span class="str">"2.0"</span>,
+            <span class="prop">id</span>: <span class="num">2</span>,
+            <span class="prop">method</span>: <span class="str">"tools/call"</span>,
+            <span class="prop">params</span>: {
+            <span class="prop">name</span>: <span class="str">"search_addresses"</span>,
+            <span class="prop">arguments</span>: {
+            <span class="prop">query</span>: <span class="str">"plaza mayor"</span>,
+            <span class="prop">per_page</span>: <span class="num">5</span>,
+            <span class="prop">provincia_id</span>: <span class="str">"28"</span>
+            }
+            }
+            }
+
+            <span class="cmt"># Response</span>
+            { <span class="prop">jsonrpc</span>: <span class="str">"2.0"</span>,
+            <span class="prop">id</span>: <span class="num">2</span>,
+            <span class="prop">result</span>: {
+            <span class="prop">content</span>: [{ <span class="prop">type</span>: <span class="str">"text"</span>, <span
+              class="prop">text</span>: <span class="str">"{\n \"total\": 131,\n \"groups\": [\n {\n \"municipio_id\":
+              \"28079\",\n \"municipio\": \"Madrid\",\n \"provincia\": \"Madrid\",\n \"found\": 42,\n \"items\": [{ ...
+              }]\n }\n ]\n}" }]
+              }
+              }
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Configuration</h3>
+          <p>Add to <code>.mcp.json</code> or your IDE's MCP settings:</p>
+          <div class="code-block">{
+            <span class="str">"mcpServers"</span>: {
+            <span class="str">"spain-address"</span>: {
+            <span class="prop">command</span>: <span class="str">"node"</span>,
+            <span class="prop">args</span>: [<span class="str">"/path/to/packages/mcp/dist/cli.js"</span>],
+            <span class="prop">env</span>: {
+            <span class="str">"TYPESENSE_HOST"</span>: <span class="str">"127.0.0.1"</span>,
+            <span class="str">"TYPESENSE_PORT"</span>: <span class="str">"8108"</span>,
+            <span class="str">"TYPESENSE_API_KEY"</span>: <span class="str">"xyz"</span>
+            }
+            }
+            }
+            }
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Section 5: ETL Pipeline ===== -->
+      <section class="section" id="etl" aria-labelledby="etl-title">
+        <h2 class="section-header" id="etl-title">5 · ETL Pipeline</h2>
+        <p class="section-desc">The INE Callejero ETL pipeline downloads, parses, normalizes, deduplicates, and outputs
+          the search index. Processes 88K+ raw TRAM rows into 37K+ structured records per province.</p>
+
+        <div class="use-case">
+          <h3>Run the Pipeline</h3>
+          <div class="code-block"><span class="cmt"># Download and process INE Callejero data</span>
+            pnpm exec tsx packages/etl/src/index.ts <span class="fn">run</span> \
+            --year <span class="num">2026</span> --month <span class="num">1</span> --provinces <span
+              class="num">28</span>
+
+            <span class="cmt"># Validate the output</span>
+            pnpm exec tsx packages/etl/src/index.ts <span class="fn">validate</span> \
+            packages/data/snapshots/callejero_2026-01_28.jsonl
+
+            <span class="cmt"># Process all provinces (national index)</span>
+            pnpm exec tsx packages/etl/src/index.ts <span class="fn">run</span> \
+            --year <span class="num">2026</span> --month <span class="num">1</span>
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Output</h3>
+          <p>The pipeline produces a gzipped JSONL file with 749,261 records. Each record contains:</p>
+          <div class="code-block">{
+            <span class="prop">id</span>: <span class="str">"a3f1b2c4d5e6f7a8"</span>,
+            <span class="prop">via_tipo</span>: <span class="str">"Calle"</span>,
+            <span class="prop">via_nombre</span>: <span class="str">"Gran Vía"</span>,
+            <span class="prop">via_nombre_completo</span>: <span class="str">"Calle Gran Vía"</span>,
+            <span class="prop">municipio</span>: <span class="str">"Madrid"</span>,
+            <span class="prop">municipio_id</span>: <span class="str">"28079"</span>,
+            <span class="prop">provincia</span>: <span class="str">"Madrid"</span>,
+            <span class="prop">provincia_id</span>: <span class="str">"28"</span>,
+            <span class="prop">comunidad_autonoma</span>: <span class="str">"Comunidad de Madrid"</span>,
+            <span class="prop">codigo_postal</span>: <span class="str">"28013"</span>,
+            <span class="prop">label</span>: <span class="str">"Calle Gran Vía, Madrid (28013)"</span>,
+            <span class="prop">lat</span>: <span class="num">40.42</span>,
+            <span class="prop">lon</span>: <span class="num">-3.70</span>
+            }
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Section 6: Typesense Import ===== -->
+      <section class="section" id="import" aria-labelledby="import-title">
+        <h2 class="section-header" id="import-title">6 · Typesense Indexing</h2>
+        <p class="section-desc">Bulk-import the ETL output into Typesense. Two collections: <code>callejero_es</code>
+          (749K street records) and <code>cascade_es</code> (18K province/municipality/postal code records).</p>
+
+        <div class="use-case">
+          <h3>Import Commands</h3>
+          <div class="code-block"><span class="cmt"># Import the street index (749,261 docs)</span>
+            pnpm typesense:import -- \
+            --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz \
+            --drop \
+            --batch-size <span class="num">1000</span>
+
+            <span class="cmt"># Import the cascade index (18,285 docs)</span>
+            pnpm cascade:import -- \
+            --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz \
+            --drop
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Verify</h3>
+          <div class="code-block"><span class="cmt"># Check street index</span>
+            <span class="fn">curl</span> -s -H <span class="str">"x-typesense-api-key: xyz"</span> \
+            <span class="str">"http://127.0.0.1:8108/collections/callejero_es"</span> | node -pe <span
+              class="str">"JSON.parse(require('fs').readFileSync(0,'utf8')).num_documents"</span>
+            <span class="cmt"># → 749261</span>
+
+            <span class="cmt"># Check cascade index</span>
+            <span class="fn">curl</span> -s -H <span class="str">"x-typesense-api-key: xyz"</span> \
+            <span class="str">"http://127.0.0.1:8108/collections/cascade_es"</span> | node -pe <span
+              class="str">"JSON.parse(require('fs').readFileSync(0,'utf8')).num_documents"</span>
+            <span class="cmt"># → 18285</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Section 7: Architecture ===== -->
+      <section class="section" id="architecture" aria-labelledby="arch-title">
+        <h2 class="section-header" id="arch-title">7 · Architecture</h2>
+        <p class="section-desc">The system is composed of four layers: the browser widget, the BFF proxies, the
+          Typesense search engine, and the MCP server.</p>
+
+        <div class="arch-diagram">
+          <div class="arch-layer">
+            <h4>Client Layer</h4>
+            <p><code>&lt;address-search-es&gt;</code> widget · React/Vue/Angular wrappers · MCP clients (Claude, Cursor)
+            </p>
+          </div>
+          <div class="arch-arrow">▼</div>
+          <div class="arch-layer">
+            <h4>BFF Layer</h4>
+            <p><code>@spain-address/proxy</code> — fuzzy street search · <code>@spain-address/cascade</code> —
+              provincia/municipio/CP dropdown · Both Hono HTTP servers</p>
+          </div>
+          <div class="arch-arrow">▼</div>
+          <div class="arch-layer">
+            <h4>Search Engine</h4>
+            <p><code>callejero_es</code> (749K docs) · <code>cascade_es</code> (18K docs) · Typesense HTTP/REST ·
+              Faceted filtering, infix search, grouping</p>
+          </div>
+          <div class="arch-arrow">▼</div>
+          <div class="arch-layer">
+            <h4>Data Layer</h4>
+            <p>INE Callejero (Jan 2026) · 749,261 streets · 52 provinces · 8,106 municipalities · 10,127 postal codes ·
+              INE Municipios (UP) master</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Section 8: Deployment ===== -->
+      <section class="section" id="deploy" aria-labelledby="deploy-title">
+        <h2 class="section-header" id="deploy-title">8 · Deployment</h2>
+        <p class="section-desc">Production deployment runs on a single OVH VPS behind a Cloudflare Tunnel. Total cost:
+          under €5/month.</p>
+
+        <div class="use-case">
+          <h3>Quick Start</h3>
+          <div class="code-block"><span class="cmt"># Clone and install</span>
+            git clone https://github.com/Karim-capatlas/spain-address-autocomplete.git
+            cd spain-address-autocomplete
+            pnpm install --frozen-lockfile
+
+            <span class="cmt"># Build the workspace</span>
+            pnpm build
+
+            <span class="cmt"># Start Typesense (Docker)</span>
+            docker compose up -d typesense
+
+            <span class="cmt"># Import both indexes</span>
+            pnpm typesense:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop --batch-size
+            1000
+            pnpm cascade:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop
+
+            <span class="cmt"># Start the BFFs</span>
+            pnpm --filter @spain-address/proxy start # port 8787
+            pnpm --filter @spain-address/cascade start # port 5978
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Cloudflare Tunnel</h3>
+          <p>The demo hostname <code>calle.alami.es</code> routes through a Cloudflare Tunnel — no open inbound ports,
+            automatic TLS.</p>
+          <div class="code-block"><span class="cmt"># Tunnel routes (dashboard)</span>
+            <span class="cmt"># Path ^/api/geo → localhost:5978 (cascade)</span>
+            <span class="cmt"># Catch-all → localhost:8787 (proxy)</span>
+
+            <span class="cmt"># Widget config for Pages</span>
+            <span class="tag">&lt;address-search-es</span>
+            <span class="attr">endpoint</span>=<span class="str">"https://calle.alami.es/api/address-search"</span>
+            <span class="tag">&gt;&lt;/address-search-es&gt;</span>
+          </div>
+        </div>
+
+        <div class="use-case">
+          <h3>Environment Variables</h3>
+          <div class="code-block"><span class="cmt"># Typesense connection</span>
+            <span class="prop">TYPESENSE_HOST</span>=<span class="str">"127.0.0.1"</span>
+            <span class="prop">TYPESENSE_PORT</span>=<span class="str">"8108"</span>
+            <span class="prop">TYPESENSE_PROTOCOL</span>=<span class="str">"http"</span>
+            <span class="prop">TYPESENSE_API_KEY</span>=<span class="str">"xyz"</span>
+
+            <span class="cmt"># Proxy BFF</span>
+            <span class="prop">PORT</span>=<span class="str">"8787"</span>
+            <span class="prop">CORS_ORIGINS</span>=<span class="str">"https://calle.alami.es"</span>
+
+            <span class="cmt"># Cascade BFF</span>
+            <span class="prop">CASCADE_PORT</span>=<span class="str">"5978"</span>
+            <span class="prop">CASCADE_COLLECTION</span>=<span class="str">"cascade_es"</span>
+
+            <span class="cmt"># Upstash opt-in (alternative to Typesense)</span>
+            <span class="prop">USE_UPSTASH</span>=<span class="str">"1"</span>
+            <span class="prop">UPSTASH_REDIS_REST_URL</span>=<span class="str">"https://...</span>
+            <span class="prop">UPSTASH_REDIS_REST_TOKEN</span>=<span class="str">"..."</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Section 9: Package Overview ===== -->
+      <section class="section" id="packages" aria-labelledby="packages-title">
+        <h2 class="section-header" id="packages-title">9 · Package Overview</h2>
+        <p class="section-desc">The monorepo is organized into focused packages, each with a single responsibility.</p>
+
+        <div class="use-case">
+          <h3><code>@spain-address/etl</code></h3>
+          <p>INE ZIP downloader, TRAM parser, UP municipio derivation, normalize/merge/dedupe, JSONL+gzip writer, CLI.
+          </p>
+          <div class="code-block">pnpm exec tsx packages/etl/src/index.ts run --year 2026 --month 1 --provinces 28</div>
+        </div>
+
+        <div class="use-case">
+          <h3><code>@spain-address/core</code></h3>
+          <p>Shared types (<code>AddressRecord</code>, <code>SearchResult</code>) + backend-agnostic
+            <code>searchAddresses</code> + <code>createSearchClient</code> factory (Typesense default, Upstash opt-in).
+          </p>
+        </div>
+
+        <div class="use-case">
+          <h3><code>@spain-address/typesense</code></h3>
+          <p><code>callejero_es</code> collection schema + bulk-import CLI.</p>
+        </div>
+
+        <div class="use-case">
+          <h3><code>@spain-address/widget</code></h3>
+          <p>StencilJS custom element <code>&lt;address-search-es&gt;</code> + generated React/Vue/Angular wrappers.</p>
+        </div>
+
+        <div class="use-case">
+          <h3><code>@spain-address/proxy</code></h3>
+          <p>Hono BFF proxy — <code>GET /api/address-search</code> with CORS.</p>
+        </div>
+
+        <div class="use-case">
+          <h3><code>@spain-address/cascade</code></h3>
+          <p>Standalone Hono app — <code>GET /api/geo/provincias</code>, <code>/municipios</code>, <code>/cps</code>,
+            <code>/validate-cp</code>.</p>
+        </div>
+
+        <div class="use-case">
+          <h3><code>@spain-address/mcp</code></h3>
+          <p>MCP server — stdio JSON-RPC with <code>normalize_address</code> and <code>search_addresses</code> tools.
+          </p>
+        </div>
+
+        <div class="use-case">
+          <h3><code>@spain-address/upstash</code></h3>
+          <p>Upstash Redis Search — retained as explicit opt-in via <code>USE_UPSTASH=1</code>.</p>
+        </div>
+      </section>
+  </main>
+
+  <footer role="contentinfo">
+    <div class="footer-links">
+      <a href="https://github.com/Karim-capatlas/es-street-finder" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <a href="https://calle.alami.es/api/address-search?q=gran%20via" target="_blank" rel="noopener noreferrer">API
+        Demo</a>
+      <a href="https://calle.alami.es/api/geo/provincias" target="_blank" rel="noopener noreferrer">Cascade API</a>
+      <a href="https://www.ine.es/dyngs/DAB/es/index.htm?cid=1390" target="_blank" rel="noopener noreferrer">Data:
+        INE</a>
+    </div>
+    <p class="copyright">© 2025 Karim Alami — MIT License — Data © Instituto Nacional de Estadística</p>
+  </footer>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // ===== Widget demo result display =====
+      const widget = document.getElementById('demo-search');
+      const resultPanel = document.getElementById('demo-result');
+
+      if (widget && resultPanel) {
+        widget.addEventListener('addressSelected', (e) => {
+          const addr = e.detail;
+          if (!addr) return;
+
+          const highlights = addr.highlights || [];
+          const highlightMap = new Map();
+          highlights.forEach(h => {
+            h.matched_tokens?.forEach(t => highlightMap.set(t.toLowerCase(), true));
+          });
+
+          const highlight = (text) => {
+            if (!text) return '';
+            return text.split(/(\s+)/).map(part => {
+              if (highlightMap.has(part.toLowerCase())) {
+                return `<mark style="background:var(--primary-100);color:var(--primary);border-radius:2px;padding:0 1px;">${escapeHtml(part)}</mark>`;
+              }
+              return escapeHtml(part);
+            }).join('');
+          };
+
+          resultPanel.innerHTML = `
+            <div class="result-header">
+              <h4>✓ Selected Address</h4>
+              <button class="result-close" aria-label="Cerrar" type="button">✕</button>
+            </div>
+            <div class="result-body">
+              <div class="result-field"><label>Full Address</label><span>${highlight(addr.label || addr.via_nombre_completo || '')}</span></div>
+              <div class="result-field"><label>Street</label><span>${highlight((addr.via_tipo || '') + ' ' + (addr.via_nombre || '')).trim()}</span></div>
+              <div class="result-field"><label>Municipality</label><span>${escapeHtml(addr.municipio || '')}</span></div>
+              <div class="result-field"><label>Province</label><span>${escapeHtml(addr.provincia || '')}</span></div>
+              <div class="result-field"><label>Postal Code</label><span>${escapeHtml(addr.codigo_postal || '')}</span></div>
+              <div class="result-field"><label>Autonomous Community</label><span>${escapeHtml(addr.comunidad_autonoma || '')}</span></div>
+              <div class="result-meta">
+                <span class="meta-tag"><strong>CPRO</strong>${escapeHtml(addr.provincia_id || '')}</span>
+                <span class="meta-tag"><strong>CMUN</strong>${escapeHtml(addr.municipio_id || '')}</span>
+                <span class="meta-tag"><strong>CCAA</strong>${escapeHtml(addr.comunidad_autonoma_id || '')}</span>
+              </div>
+            </div>
+          `;
+          resultPanel.hidden = false;
+
+          resultPanel.querySelector('.result-close')?.addEventListener('click', () => {
+            resultPanel.hidden = true;
+            resultPanel.innerHTML = '';
+          });
+        });
+
+        widget.addEventListener('addressCleared', () => {
+          resultPanel.hidden = true;
+          resultPanel.innerHTML = '';
+        });
+      }
+
+      // ===== Dark mode sync =====
+      const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      function applyDarkMode(dark) {
+        if (widget) widget.setAttribute('data-theme', dark ? 'dark' : 'light');
+      }
+      applyDarkMode(darkQuery.matches);
+      darkQuery.addEventListener('change', (e) => applyDarkMode(e.matches));
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+    })();
+  </script>
+</body>
+
+</html>

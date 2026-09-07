@@ -33,6 +33,52 @@ export interface Highlight {
   matches: number
 }
 
+/**
+ * Parsed unit ("datos del domicilio") extracted from the *input* address text.
+ *
+ * The INE Callejero carries no portal numbers, so these fields can never be
+ * indexed — they only exist on the input side and are produced by
+ * `parseDomicilio` (deterministic rule-based parser, zero runtime deps).
+ */
+export interface DomicilioUnit {
+  /** Street number, e.g. `"12"`, `"259 D"` (letter suffix kept on `numero`). */
+  numero: string | null
+  /** Floor/planta, e.g. `"4º"`, `"Bajo"`, `"Entresuelo"`, `"Ático"`, `"Sótano"`. */
+  piso: string | null
+  /** Door, e.g. `"B"`, `"Izq"`, `"Dcha"`. */
+  puerta: string | null
+  /** Stairwell, e.g. `"1"`, `"A"`. */
+  escalera: string | null
+  /** Block, e.g. `"3"`. */
+  bloque: string | null
+  /** Portal, e.g. `"2"`. */
+  portal: string | null
+  /** Road Km point, e.g. `"4"`. */
+  kilometros: string | null
+  /** True when the input declares "S/N" / "s/n" / "sin número". */
+  sin_numero: boolean
+  /** Lossless original unit substring (e.g. `"12 4º B"`) — never normalized. */
+  unidad_raw: string
+}
+
+/**
+ * A matched street (`AddressRecord`) merged with the parsed unit. This is the
+ * payload returned by `normalize_address` and the `addressNormalized` event.
+ */
+export interface DireccionNormalizada extends AddressRecord {
+  numero: string | null
+  piso: string | null
+  puerta: string | null
+  escalera: string | null
+  bloque: string | null
+  portal: string | null
+  kilometros: string | null
+  sin_numero: boolean
+  unidad_raw: string
+  /** `'exact'` when driven by explicit markers; `'parcial'` for positional heuristics. */
+  confidence: 'exact' | 'parcial'
+}
+
 export interface SearchOptions {
   query: string
   perPage?: number

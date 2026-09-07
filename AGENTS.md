@@ -130,6 +130,61 @@ green and the package joins `pnpm build` (5/5).
 (core inlined), `dist/react/components.ts`, `dist/types/…`. `package.json` `exports`
 exposes `.` (CE), `./react`, `./dist/*`.
 
+#### Widget v2 — two components + shared utils (do not rediscover)
+
+`packages/widget/src` now ships **two** custom elements from one package:
+
+- `<address-search-es>` (`address-search-es.tsx` + `.css`) — the redesigned
+  combobox. Selection **fills the input** with `record.label` (the green chip is
+  now opt-in via `detail="chip"`; `detail="inline-card"` renders a structured
+  address card; default `detail="none"`). `size="sm|md|lg"` (default **sm** = Joy
+  small: 32px/0.875rem) scales from `--aes-input-h`/`--aes-fs`/`--aes-pad`/
+  `--aes-row-py` tokens via `:host([size='md'|'lg'])`. Group headers are
+  **non-interactive sticky section labels** (`role="group"` + `aria-labelledby`,
+  flat option nav only — the old `collapsed` Set + `toggleGroup` are gone).
+  "Ver todo"/`loadMore()`/`limit`/`effectiveLimit()` were **deleted**; `per_page`
+  is always `maxGroups`. The footer carries a **"Powered by"** backlink
+  (`powered-by-href`/`powered-by-label`, `target="_blank" rel="noopener"`) +
+  "Datos © INE", and sits **outside** the `role="listbox"`. Errors keep the menu
+  **open** with a `role="alert"` row + "Reintentar". Spinner XOR clear live in a
+  flex `.aes-trailing` slot (no absolute overlap); text glyphs replaced by inline
+  SVG.
+- `<address-cascade-es>` (`address-cascade-es.tsx` + `.css`) — classical admin
+  form Provincia → Municipio → CP → Calle. Geo dropdowns fetch from
+  `cascade-endpoint` (`{base}/provincias`, `/municipios?provincia=`,
+  `/cps?municipio=`); the municipio `code` is **already the 5-digit INE id**
+  (CPRO+CMUN) — stored, never displayed. The Calle step reuses the search
+  controller with `municipio`+`cp` filters. Emits `cascadeChanged`
+  (`{step, provincia_id, provincia, municipio_id, municipio, codigo_postal, ccaa}`)
+  per step + `addressSelected`/`addressCleared`/`error`. `@Method`s: `clear()`,
+  `getState()`, `setSelection(record)`. `name-prefix` renders hidden inputs
+  (`{prefix}_provincia_id|_municipio_id|_codigo_postal|_via|_ccaa`) — **shadow-DOM
+  caveat:** they are NOT auto-submitted by an outer native `<form>`; read
+  `getState()`/events instead.
+
+**Shared utils (`src/utils/`, imported by both `.tsx`):**
+- `provincias.ts` — the 52-entry CPRO→{nombre,ccaa} table (4th copy; `getProvinciaName`
+  powers the scope chip + cascade fallbacks).
+- `search-controller.ts` — `SearchController` class: `AbortController` + monotonic
+  `searchSeq` race guard, endpoint-vs-direct client resolution (caches the direct
+  Typesense client), `searchAddressesTypesense`. Returns a discriminated
+  `SearchOutcome` (`ok|superseded|error`) and **never throws** — debounce stays in
+  each component.
+- `option-list.tsx` — `flatItems`, `activeOptionId`, `renderHighlighted`,
+  `renderOptionGroups(groups, focused, onSelect, prefix)` (the shared grouped
+  dropdown markup; `aes` prefix for search, `ace` for cascade).
+- `icons.tsx` — inline SVG helpers (`iconClear`/`iconCheck`/`iconPin`/`iconRetry`).
+
+**Compiler gotcha (stripped Stencil):** `dist/components/index.js`'s
+`defineCustomElement()` registers **only** `address-search-es`; `address-cascade-es`
+ships as a self-contained `dist/components/address-cascade-es.js` with its own
+`defineCustomElement`. Demos/tests must import the **per-component** file to
+register each element (the generated React wrappers already do). The `aes-*`
+option-list CSS is **duplicated** in both component `.css` files (per-component
+`styleUrl`; `globalStyle` would escape the Shadow DOM). Every new `.tsx` (incl.
+`utils/icons.tsx` + `utils/option-list.tsx`) uses the `h`-from-internal-client
+dance + inline `import('@spain-address/core').X` types.
+
 ### Phase 1 — ETL (DONE, with the real INE format)
 
 This is the critical path that was fixed. The repo previously emitted **corrupt**
@@ -258,7 +313,7 @@ Search (via `searchAddresses` against the built core):
 | `packages/etl` | INE ZIP downloader, `TRAM` parser, `UP` municipio derivation, normalize/merge/dedupe, JSONL+gzip writer, CLI | ✅ Complete |
 | `packages/core` | `AddressRecord`/`SearchOptions`/`SearchResult` types + **backend-agnostic `searchAddresses`** (dispatches `command`=Upstash vs `client`=Typesense) + `createSearchClient()` factory (**Typesense by default**; Upstash opt-in via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`) + Upstash REST client/primitives (retained) + `searchAddressesTypesense` (widget direct-mode, keeps Upstash code out of browser bundle) | ✅ Complete (Phase 2) · Phase 3.5 default flipped to Typesense |
 | `packages/typesense` | `callejero_es` collection schema + bulk-import CLI (`import.ts`) | ✅ Complete (Phase 2) |
-| `packages/widget` | **StencilJS** custom element `<address-search-es>` (grouped results, CP detection, province scoping) + generated React/Vue/Angular wrappers | ✅ Done |
+| `packages/widget` | **StencilJS** custom elements — `<address-search-es>` (v2 combobox: input-filled selection, `detail=none\|chip\|inline-card`, `size=sm\|md\|lg`, "Powered by" footer) + `<address-cascade-es>` (Provincia→Municipio→CP→Calle admin form, background 5-digit INE codes, `cascadeChanged`/hidden inputs) + shared `src/utils/*` + generated React wrappers | ✅ Done (v2) |
 | `packages/proxy` | Hono BFF proxy (`GET /api/address-search`, `GET /health`); forwards `@spain-address/core`'s full `SearchDependencies` via `createSearchClient()` (Typesense-default) + CORS | ✅ Complete · Phase 3.5 Typesense-default |
 | `packages/react` | **Superseded** — replaced by the Stencil‑generated React target (`@spain-address/widget/react`) | n/a |
 | `packages/upstash` | **Upstash Redis Search** — FT.CREATE schema (`schema.ts`, TEXT weights 5/3/1/1 + TAG filters) + bulk-import CLI; query primitives/REST client now live in `@spain-address/core` and are re-exported here for backward compat (`search.ts`/`client.ts`) | ✅ Phase 3.5 done |
@@ -272,6 +327,13 @@ Search (via `searchAddresses` against the built core):
 - Import stores each record as one hash (`HSET callejero:<id> data <jsonl-line>`); read path parses JSON back to `AddressRecord`.
 - `packages/mcp/src/cli.ts` implements the MCP handshake minimally over newline-delimited JSON-RPC on stdio (no SDK dependency). Smoke-tested: `initialize`, `tools/list` respond correctly.
 - Phase 3.5 default-flip is **done**: `core`'s `searchAddresses(options, deps)` dispatches to the Upstash path when `deps.command` (a Redis `command(args)` fn) is present, else to Typesense when `deps.client` is present, else throws `'no backend configured'`. `createSearchClient()` now selects **Typesense by default** (`TYPESENSE_HOST`/`TYPESENSE_PORT`/`TYPESENSE_PROTOCOL`/`TYPESENSE_API_KEY`), and only selects Upstash when `USE_UPSTASH=1` is set **and** `UPSTASH_REDIS_REST_URL`+token env vars are present — so MCP/proxy/cascade use Typesense in both local and cloud deployments; Upstash Redis Search is retained for teams that want a Redis-protocol backend. The widget imports `searchAddressesTypesense` (the pure Typesense path) so no Upstash/FT.SEARCH code ships in the browser bundle. Live-verified locally against Typesense (callejero_es 749,261 docs; cascade_es 18,285 docs: 52 provincias, 8,106 municipios, 10,127 CPs; `q:"Gran Vía"`→131, `/validate-cp` 28079+28013→`{valid:true,ineCode:"28079"}`).
+
+#### "Datos del domicilio" parser (Phase 3.5, do not rediscover)
+
+- `packages/core/src/domicilio.ts` adds `parseDomicilio(text) → { query, unidad, heuristic }`, `normalizeDomicilio(text, deps, opts?)` and `merge(record, unidad, confidence)`. It extracts the **input-side** unit (número/piso/puerta/portal/bloque/escalera/Km) from noisy address text and returns the street-line `query` for `searchAddresses`. The unit is **never indexed** (the INE Callejero has no portal numbers) — `AddressRecord`/`toAddressRecord()`/the Typesense schema are **unchanged**.
+- Matching-only normalization mirrors `normalizeForSearch` (NFD strip diacritics, lowercase) but also unifies `ª°`→`º`, strips trailing periods (`n.` `km.` `esc.` `pl.`), and strips surrounding `,;` (internal `,` survives for `12,5` decimals). `unidad_raw` stays lossless (original raw substrings).
+- Rules: explicit marker keywords (`nº`, `planta/piso`, `puerta/pta`, `bloque/blq`, `portal/prtl`, `escalera/esc`, `km`, `s/n`) consume their next value; positional fallbacks then assign first bare number→`numero` (letter suffix stays, `"259d"`→`"259 D"`), following number/ordinal→`piso` (`"4º"`), isolated letter after piso→`puerta` (`"4º B"`→piso `4º`+puerta `B`). `Bajo/Entresuelo/Ático/Sótano/Principal` are piso values (never numbers). A 5-digit token is a CP and stays in `query` (routed to `filterByCP`). `heuristic` distinguishes `'parcial'` (positional) from `'exact'` (explicit markers / no unit).
+- Consumers: MCP `normalize_address` returns `DireccionNormalizada` (street + unit + categorical `confidence`); `search_addresses` stays street-only. Widget `<address-search-es>` runs `parseDomicilio` in `selectItem` and emits a new **`addressNormalized`** event (also renders Número/Piso/Puerta/… rows in `detail="inline-card"`). `<address-cascade-es>` adds free-text Número/Piso/Puerta/Portal/Bloque/Escalera inputs carried in `CascadeState` + `{prefix}_numero|_piso|_puerta|_portal|_bloque|_escalera` hidden inputs. Proxy exposes `GET /api/normalize`. Demo OCR examples + UI copy were rewritten to Spanish (the old `ine_id`/numeric `confidence` were dropped — portal INE ids are not derivable from Callejero data).
 
 ### `packages/etl` — key files
 - `src/index.ts` — `commander` CLI with `run` and `validate` subcommands.

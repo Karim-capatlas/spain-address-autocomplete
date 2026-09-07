@@ -1,14 +1,16 @@
 /**
  * MCP server tools for Spanish address normalization (Phase 3.5).
  *
- * Two stdio tools backed by `searchAddresses()` from `@spain-address/core`:
- * - `normalize_address(text)` → single best structured match
- * - `search_addresses(query, filters?)` → ranked matches
+ * Two stdio tools backed by `searchAddresses()` / `normalizeDomicilio()` from
+ * `@spain-address/core`:
+ * - `normalize_address(text)` → single best structured match + parsed "datos del
+ *   domicilio" unit (número, piso, puerta, portal, bloque, escalera, Km)
+ * - `search_addresses(query, filters?)` → ranked street matches (indexed backend)
  */
 
-import type { AddressRecord, SearchOptions, SearchResult } from '@spain-address/core'
+import type { AddressRecord, SearchResult } from '@spain-address/core'
 import type { SearchDependencies } from '@spain-address/core'
-import { searchAddresses } from '@spain-address/core'
+import { searchAddresses, normalizeDomicilio } from '@spain-address/core'
 
 /** Search function injection point — tests swap this for a fake. */
 export interface ToolDeps extends Partial<SearchDependencies> {
@@ -32,13 +34,13 @@ function backendDeps(deps: ToolDeps): SearchDependencies {
 export const NORMALIZE_ADDRESS_TOOL = {
   name: 'normalize_address',
   description:
-    'Normalize a noisy Spanish address string (e.g. from DNI/TIE OCR) into structured fields: via type, street name, municipio (name + INE code), provincia (name + code), and código postal. Returns the single best match.',
+    'Normalize a noisy Spanish address string (e.g. from DNI/TIE OCR) into structured "datos del domicilio": via type, street name, número, piso, puerta, portal, bloque, escalera, Km, municipio (name + INE code), provincia (name + code), and código postal. Returns the single best match with a categorical confidence ("exact" | "parcial").',
   inputSchema: {
     type: 'object',
     properties: {
       text: {
         type: 'string',
-        description: 'Noisy address text, e.g. "calle gran via 12 madrid"',
+        description: 'Noisy address text, e.g. "calle gran via 12 4º B madrid"',
       },
       provincia_id: {
         type: 'string',
@@ -52,7 +54,7 @@ export const NORMALIZE_ADDRESS_TOOL = {
 export const SEARCH_ADDRESSES_TOOL = {
   name: 'search_addresses',
   description:
-    'Search the Spanish street index (749K records from INE Callejero). Returns ranked matches with municipio grouping.',
+    'Search the Spanish street index (749K records from INE Callejero). Returns ranked street matches with municipio grouping.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -66,17 +68,8 @@ export const SEARCH_ADDRESSES_TOOL = {
   },
 } as const
 
-/** Strip a trailing house-number / floor token ("C/ Mayor 12 3ºB") for street matching. */
-function stripHouseNumber(text: string): string {
-  return text
-    .replace(/[,;]+/g, ' ')
-    .replace(/\b(n[ºo°.]?\s*)?\d+\s*[a-zº°]{0,3}\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-/** Shape the normalized output: only the fields the OCR pipeline consumes. */
-function toNormalized(record: AddressRecord) {
+/** Street-only projection (no unit fields — the index never carries them). */
+function toStreetFields(record: AddressRecord) {
   return {
     via_tipo: record.via_tipo,
     via_nombre: record.via_nombre,
@@ -88,7 +81,6 @@ function toNormalized(record: AddressRecord) {
     comunidad_autonoma: record.comunidad_autonoma,
     codigo_postal: record.codigo_postal,
     label: record.label,
-    confidence: 'exact' as const,
   }
 }
 
@@ -100,34 +92,25 @@ function jsonContent(value: unknown): ToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] }
 }
 
-export interface NormalizeDeps {
-  search?: typeof searchAddresses
-  deps?: ToolDeps
-}
-
 /**
- * Implement `normalize_address`: search with the cleaned street query,
- * optionally narrowed by provincia, and return the top hit.
+ * Implement `normalize_address`: parse the unit out of the input, search the
+ * street line, and return the top hit merged with the parsed "datos del
+ * domicilio" (`DireccionNormalizada`).
  */
 export async function normalizeAddress(
   args: { text: string; provincia_id?: string },
   deps: ToolDeps,
 ): Promise<ToolResult> {
-  const query = stripHouseNumber(args.text)
-  if (!query) {
-    return jsonContent({ error: 'empty_query', message: 'No usable street text in input' })
+  const search = deps.search ?? searchAddresses
+  const normalized = await normalizeDomicilio(
+    args.text,
+    { ...deps, search },
+    { filterByProvincia: args.provincia_id },
+  )
+  if (!normalized) {
+    return jsonContent({ error: 'no_match', query: args.text })
   }
-  const options: SearchOptions = {
-    query,
-    perPage: 5,
-    filterByProvincia: args.provincia_id,
-  }
-  const run = deps.search ?? searchAddresses
-  const result = await run(options, backendDeps(deps))
-  if (!result.records.length) {
-    return jsonContent({ error: 'no_match', query })
-  }
-  return jsonContent(toNormalized(result.records[0] as AddressRecord))
+  return jsonContent(normalized)
 }
 
 /** Implement `search_addresses`: pass-through to the backend with structured options. */
@@ -159,7 +142,7 @@ export async function searchAddressesTool(
       municipio: g.municipio,
       provincia: g.provincia,
       found: g.found,
-      items: g.items.map(toNormalized),
+      items: g.items.map(toStreetFields),
     })),
   })
 }

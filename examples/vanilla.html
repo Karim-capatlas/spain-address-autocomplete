@@ -2,61 +2,451 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>address-search-es Widget Example</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#435ad2" />
+  <meta name="description" content="Spanish Address Autocomplete — 749K streets, 52 provinces, powered by Typesense." />
+  <title>calle.alami.es — Spanish Address Autocomplete</title>
+  <link rel="preconnect" href="https://calle.alami.es" crossorigin />
   <script type="module">
-    import { defineCustomElement } from '../packages/widget/dist/components/address-search-es.js';
-    defineCustomElement();
+    import { defineCustomElement as defineSearch } from '../packages/widget/dist/components/address-search-es.js';
+    import { defineCustomElement as defineCascade } from '../packages/widget/dist/components/address-cascade-es.js';
+    defineSearch();
+    defineCascade();
   </script>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 1rem; }
-    address-search-es { width: 100%; }
-    .log { font-size: 0.85rem; color: #64748b; margin-top: 1rem; }
-    .mode { font-size: 0.85rem; margin-bottom: 1.5rem; padding: 0.75rem 1rem; border-radius: 8px; }
-    .mode.dev { background: #fef9c3; color: #713f12; }
-    .mode.prod { background: #dcfce7; color: #14532d; }
-    code { background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 4px; }
+    /* ===== Reset & base (mobile-first) ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; }
+
+    :root {
+      --bg: #f8fafc;
+      --fg: #0f172a;
+      --fg-muted: #64748b;
+      --primary: #435ad2;
+      --primary-600: #3749c1;
+      --primary-100: #e0e7ff;
+      --accent: #22c55e;
+      --accent-100: #dcfce7;
+      --border: #e2e8f0;
+      --surface: #ffffff;
+      --surface-sub: #f1f5f9;
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+      --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+      --radius: 12px;
+      --radius-lg: 16px;
+      --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --mono: ui-monospace, 'SF Mono', 'Fira Code', Menlo, monospace;
+      --header-h: 52px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1220;
+        --fg: #f1f5f9;
+        --fg-muted: #94a3b8;
+        --primary: #818cf8;
+        --primary-600: #6366f1;
+        --primary-100: #1e1b4b;
+        --accent: #4ade80;
+        --accent-100: #064e3b;
+        --border: #1e293b;
+        --surface: #111827;
+        --surface-sub: #1e293b;
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+      }
+    }
+
+    body {
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--fg);
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .skip-link {
+      position: absolute; top: -100%; left: 1rem; z-index: 10000;
+      padding: 0.5rem 1rem; background: var(--primary); color: white;
+      border-radius: 8px; font-weight: 600; text-decoration: none;
+    }
+    .skip-link:focus { top: 1rem; }
+
+    header {
+      position: sticky; top: 0; z-index: 100;
+      height: var(--header-h);
+      background: rgba(var(--surface), 0.85);
+      backdrop-filter: saturate(180%) blur(16px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 1rem;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-weight: 700; font-size: 1rem; color: var(--fg);
+      text-decoration: none;
+    }
+    .logo svg { flex-shrink: 0; color: var(--primary); }
+    .badge {
+      font-size: 0.625rem; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--primary);
+      background: var(--primary-100); padding: 0.125rem 0.5rem;
+      border-radius: 999px;
+    }
+
+    main { flex: 1; padding: 1.5rem 1rem; display: flex; flex-direction: column; align-items: center; }
+
+    .hero { text-align: center; margin-bottom: 2rem; width: 100%; max-width: 480px; }
+    .hero h1 {
+      font-size: clamp(1.5rem, 6vw, 2.25rem);
+      font-weight: 800; line-height: 1.15; letter-spacing: -0.02em;
+      color: var(--fg); margin-bottom: 0.5rem;
+    }
+    .hero h1 span { color: var(--primary); }
+    .hero p { font-size: 0.9375rem; color: var(--fg-muted); max-width: 36ch; margin: 0 auto; }
+
+    .stats {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;
+      margin-bottom: 2rem; width: 100%; max-width: 480px;
+    }
+    .stat {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1rem; text-align: center;
+      box-shadow: var(--shadow-sm);
+    }
+    .stat-value { font-size: 1.375rem; font-weight: 800; color: var(--primary); line-height: 1.2; }
+    .stat-label { font-size: 0.6875rem; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.25rem; }
+
+    .search-section { width: 100%; max-width: 480px; margin-bottom: 1.5rem; }
+    .search-section > label {
+      display: block; font-size: 0.8125rem; font-weight: 600;
+      color: var(--fg-muted); margin-bottom: 0.5rem;
+    }
+
+    /* Theme the web components from the light DOM */
+    address-search-es, address-cascade-es {
+      --joy-primary: 67 90 210;
+      --joy-surface: var(--surface);
+      --joy-surface-sub: var(--surface-sub);
+      --joy-border: var(--border);
+      --joy-border-f: rgb(67 90 210 / 0.5);
+      --joy-fg: var(--fg);
+      --joy-fg-muted: var(--fg-muted);
+      --joy-shadow-pop: var(--shadow-lg);
+      --joy-shadow-sm: var(--shadow-sm);
+      --joy-skel: var(--surface-sub);
+      --joy-hover-bg: var(--surface-sub);
+      --joy-radius-input: 12px;
+      --joy-radius-menu: var(--radius);
+      --joy-radius-item: 10px;
+      --joy-radius-chip: 999px;
+      --joy-font: var(--font);
+      display: block;
+      width: 100%;
+    }
+    address-search-es[data-theme='dark'], address-cascade-es[data-theme='dark'] {
+      --joy-surface: #1f2531;
+      --joy-fg: #f1f5f9;
+      --joy-fg-muted: #94a3b8;
+      --joy-border: rgba(255, 255, 255, 0.14);
+      --joy-border-f: rgb(147 197 255 / 0.45);
+      --joy-shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.28);
+      --joy-skel: rgba(255, 255, 255, 0.12);
+      --joy-hover-bg: rgba(255, 255, 255, 0.06);
+    }
+
+    /* ===== Option / mode bars ===== */
+    .mode-bar {
+      width: 100%; max-width: 480px; margin-bottom: 1rem;
+      display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+    }
+    .ctl-label {
+      font-size: 0.6875rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--fg-muted); margin-right: 0.125rem;
+    }
+    .mode-btn {
+      font-family: var(--font); font-size: 0.75rem; font-weight: 600;
+      padding: 0.4rem 0.75rem; border-radius: 999px;
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--fg-muted); cursor: pointer; transition: all 0.15s;
+    }
+    .mode-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .mode-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+    /* ===== Cascade demo ===== */
+    .cascade-section {
+      width: 100%; max-width: 480px; margin-bottom: 2rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+      padding: 1.25rem;
+    }
+    .cascade-section h2 { font-size: 1rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .cascade-section p.hint { font-size: 0.8125rem; color: var(--fg-muted); margin-bottom: 1rem; }
+    .cascade-state {
+      margin-top: 1rem; padding: 0.75rem; border-radius: var(--radius);
+      background: var(--surface-sub); border: 1px solid var(--border);
+      font-family: var(--mono); font-size: 0.6875rem; color: var(--fg);
+      white-space: pre-wrap; word-break: break-word; min-height: 2.5rem;
+    }
+
+    .caps { margin-bottom: 2rem; width: 100%; max-width: 480px; }
+    .caps h2 { font-size: 1rem; font-weight: 700; color: var(--fg); margin-bottom: 0.75rem; text-align: center; }
+    .caps-grid { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
+    .cap-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1rem;
+      display: flex; gap: 0.75rem; align-items: flex-start;
+      box-shadow: var(--shadow-sm); transition: transform 0.15s, border-color 0.15s;
+    }
+    .cap-card:hover { transform: translateY(-1px); border-color: var(--primary-100); }
+    .cap-icon {
+      width: 36px; height: 36px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 8px; background: var(--primary-100); color: var(--primary);
+    }
+    .cap-icon svg { width: 20px; height: 20px; }
+    .cap-text h3 { font-size: 0.8125rem; font-weight: 600; color: var(--fg); margin-bottom: 0.125rem; }
+    .cap-text p { font-size: 0.75rem; color: var(--fg-muted); line-height: 1.4; }
+    .cap-text code {
+      font-family: var(--mono); font-size: 0.6875rem;
+      background: var(--surface-sub); padding: 0.1em 0.3em;
+      border-radius: 4px; color: var(--primary);
+    }
+
+    footer {
+      padding: 1.5rem 1rem; text-align: center; border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; margin-bottom: 0.75rem; }
+    .footer-links a { font-size: 0.75rem; color: var(--fg-muted); text-decoration: none; font-weight: 500; }
+    .footer-links a:hover { color: var(--primary); }
+    .copyright { font-size: 0.6875rem; color: var(--fg-muted); }
+
+    @media (min-width: 400px) {
+      .stats { grid-template-columns: repeat(4, 1fr); }
+      .caps-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 640px) {
+      main { padding: 2.5rem 1.5rem; }
+      .hero, .stats, .search-section, .cascade-section, .mode-bar, .caps { max-width: 540px; }
+      .caps-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (min-width: 1024px) {
+      .caps-grid { grid-template-columns: repeat(4, 1fr); }
+      .hero, .stats, .search-section, .cascade-section, .mode-bar { max-width: 600px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+    @media (prefers-contrast: high) {
+      :root { --border: currentColor; --shadow: none; --shadow-lg: none; --shadow-sm: none; }
+      .search-section:focus-within { outline: 3px solid; outline-offset: 2px; }
+    }
   </style>
 </head>
 <body>
-  <h1>Spanish Address Autocomplete</h1>
+  <a href="#search" class="skip-link">Saltar al buscador</a>
 
-  <!--
-    ┌─────────────────────────────────────────────────────────────────────────┐
-    │ PRODUCTION (recommended): proxy mode — no credentials in the client.    │
-    │                                                                         │
-    │   <address-search-es endpoint="/api/address-search"></address-search-es>│
-    │                                                                         │
-    │ Run the BFF proxy with:                                                 │
-    │   pnpm --filter @spain-address/proxy start                              │
-    │ (Typesense host/port/api-key are read from env vars server-side.)       │
-    └─────────────────────────────────────────────────────────────────────────┘
+  <header role="banner">
+    <a href="https://calle.alami.es" class="logo" target="_blank" rel="noopener noreferrer">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14" />
+        <path d="M3 3v18" /><path d="M9 3v18" /><path d="M15 3v18" /><path d="M21 3v18" />
+        <circle cx="12" cy="19" r="2" />
+      </svg>
+      <span>calle.alami.es</span>
+    </a>
+    <span class="badge">MVP Demo</span>
+  </header>
 
-    The example below uses DIRECT mode for convenience only — it only works
-    against a local typesense-server and MUST NOT be used in production:
-    anyone can read the API key from the page source.
-  -->
-  <div class="mode dev">
-    ⚠️ <b>Direct dev mode</b> — Typesense credentials are visible in the client.
-    For production use <code>endpoint="/api/address-search"</code> (proxy mode).
-  </div>
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <h1 id="hero-title">Spanish Address <span>Autocomplete</span></h1>
+      <p>749K+ streets across 52 provinces. Typesense-powered, framework-agnostic, production-ready.</p>
+    </section>
 
-  <address-search-es
-    typesense-host="127.0.0.1"
-    typesense-port="8108"
-    typesense-api-key="xyz"
-    typesense-protocol="http"
-    placeholder="Buscar calle, municipio o código postal…"
-  ></address-search-es>
-  <div class="log" id="log">Escribe una dirección…</div>
+    <div class="stats" role="list" aria-label="Project statistics">
+      <div class="stat" role="listitem"><div class="stat-value">749K+</div><div class="stat-label">Streets</div></div>
+      <div class="stat" role="listitem"><div class="stat-value">52</div><div class="stat-label">Provinces</div></div>
+      <div class="stat" role="listitem"><div class="stat-value">8,106</div><div class="stat-label">Municipalities</div></div>
+      <div class="stat" role="listitem"><div class="stat-value">&lt;50ms</div><div class="stat-label">Latency</div></div>
+    </div>
+
+    <!-- Mode selector: proxy vs direct Typesense -->
+    <nav class="mode-bar" aria-label="Search mode">
+      <span class="ctl-label">Mode</span>
+      <button class="mode-btn active" data-mode="proxy" type="button">Proxy</button>
+      <button class="mode-btn" data-mode="direct" type="button">Direct Typesense</button>
+    </nav>
+
+    <!-- Size + detail switchers for the search widget -->
+    <nav class="mode-bar" aria-label="Widget size">
+      <span class="ctl-label">Size</span>
+      <button class="mode-btn active" data-size="sm" type="button">sm</button>
+      <button class="mode-btn" data-size="md" type="button">md</button>
+      <button class="mode-btn" data-size="lg" type="button">lg</button>
+    </nav>
+    <nav class="mode-bar" aria-label="Selection detail">
+      <span class="ctl-label">Detail</span>
+      <button class="mode-btn active" data-detail="none" type="button">none</button>
+      <button class="mode-btn" data-detail="chip" type="button">chip</button>
+      <button class="mode-btn" data-detail="inline-card" type="button">inline-card</button>
+    </nav>
+
+    <!-- The autocomplete widget — the centerpiece -->
+    <section class="search-section" aria-labelledby="search-title">
+      <label id="search-title" for="address-search">Search any Spanish address</label>
+      <address-search-es
+        id="address-search"
+        endpoint="https://calle.alami.es/api/address-search"
+        placeholder="Calle, municipio, código postal…"
+        size="sm"
+        detail="none"
+        detect-cp
+        data-theme="light"
+      ></address-search-es>
+    </section>
+
+    <!-- The cascade admin form -->
+    <section class="cascade-section" aria-labelledby="cascade-title">
+      <h2 id="cascade-title">Cascade form — Provincia → Municipio → CP → Calle</h2>
+      <p class="hint">The 5-digit INE municipio code is computed in the background (never shown).</p>
+      <address-cascade-es
+        id="address-cascade"
+        cascade-endpoint="https://calle.alami.es/api/geo"
+        endpoint="https://calle.alami.es/api/address-search"
+        name-prefix="addr"
+        size="sm"
+        data-theme="light"
+      ></address-cascade-es>
+      <div class="cascade-state" id="cascade-state" aria-live="polite">Waiting for a selection…</div>
+    </section>
+
+    <!-- Capabilities showcase -->
+    <section class="caps" aria-labelledby="caps-title">
+      <h2 id="caps-title">How It Works</h2>
+      <div class="caps-grid">
+        <article class="cap-card">
+          <div class="cap-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+          <div class="cap-text"><h3>Proxy / BFF</h3><p>Widget talks to a Hono BFF — backend keys stay server-side. Deploy behind <code>Cloudflare Tunnel</code>.</p></div>
+        </article>
+        <article class="cap-card">
+          <div class="cap-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+          <div class="cap-text"><h3>Direct Typesense</h3><p>HTTP/REST search with fuzzy matching, infix on street names, and faceted filtering.</p></div>
+        </article>
+        <article class="cap-card">
+          <div class="cap-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></div>
+          <div class="cap-text"><h3>Cascade API</h3><p><code>GET /api/geo/provincias</code> → <code>/municipios</code> → <code>/cps</code> — local sub-ms lookups.</p></div>
+        </article>
+        <article class="cap-card">
+          <div class="cap-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/></svg></div>
+          <div class="cap-text"><h3>MCP Server</h3><p>Drop-in stdio tools: <code>normalize_address</code> and <code>search_addresses</code>.</p></div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer role="contentinfo">
+    <div class="footer-links">
+      <a href="https://github.com/Karim-capatlas/es-street-finder" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <a href="https://calle.alami.es/api/address-search?q=gran%20via" target="_blank" rel="noopener noreferrer">API Demo</a>
+      <a href="https://calle.alami.es/api/geo/provincias" target="_blank" rel="noopener noreferrer">Cascade API</a>
+      <a href="https://www.ine.es/dyngs/DAB/es/index.htm?cid=1390" target="_blank" rel="noopener noreferrer">Data: INE</a>
+    </div>
+    <p class="copyright">© 2025 Karim Alami — MIT License — Data © Instituto Nacional de Estadística</p>
+  </footer>
+
   <script>
-    const widget = document.querySelector('address-search-es');
-    widget.addEventListener('addressSelected', (e) => {
-      document.getElementById('log').textContent = 'Seleccionado: ' + JSON.stringify(e.detail);
-    });
-    widget.addEventListener('error', (e) => {
-      document.getElementById('log').textContent = 'Error: ' + e.detail.message;
-    });
+    (function () {
+      'use strict';
+
+      const widget = document.getElementById('address-search');
+      const cascade = document.getElementById('address-cascade');
+      const cascadeState = document.getElementById('cascade-state');
+
+      // ===== Mode switching: proxy vs direct Typesense =====
+      function setMode(mode) {
+        document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+        const targets = [widget, cascade];
+        for (const t of targets) {
+          if (!t) continue;
+          if (mode === 'direct') {
+            t.endpoint = '';
+            t.typesenseHost = '127.0.0.1';
+            t.typesensePort = 8108;
+            t.typesenseApiKey = 'xyz';
+            t.typesenseProtocol = 'http';
+          } else {
+            t.endpoint = 'https://calle.alami.es/api/address-search';
+            t.typesenseHost = '';
+            t.typesenseApiKey = '';
+          }
+        }
+      }
+      document.querySelectorAll('[data-mode]').forEach((btn) =>
+        btn.addEventListener('click', () => setMode(btn.dataset.mode)),
+      );
+
+      // ===== Size switcher (applies to both components) =====
+      document.querySelectorAll('[data-size]').forEach((btn) =>
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('active', b === btn));
+          const size = btn.dataset.size;
+          if (widget) widget.setAttribute('size', size);
+          if (cascade) cascade.setAttribute('size', size);
+        }),
+      );
+
+      // ===== Detail switcher (search widget selection presentation) =====
+      document.querySelectorAll('[data-detail]').forEach((btn) =>
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('[data-detail]').forEach((b) => b.classList.toggle('active', b === btn));
+          if (widget) widget.setAttribute('detail', btn.dataset.detail);
+        }),
+      );
+
+      // ===== Search widget events =====
+      widget?.addEventListener('error', (e) => console.error('Address search error:', e.detail));
+
+      // ===== Cascade events → live state readout =====
+      function renderCascadeState(detail, street) {
+        const state = {
+          step: detail?.step,
+          provincia_id: detail?.provincia_id || '',
+          provincia: detail?.provincia || '',
+          municipio_id: detail?.municipio_id || '',
+          municipio: detail?.municipio || '',
+          codigo_postal: detail?.codigo_postal || '',
+          ccaa: detail?.ccaa || '',
+          via: street?.label || '',
+        };
+        if (cascadeState) cascadeState.textContent = JSON.stringify(state, null, 2);
+      }
+      let lastCascade = null;
+      cascade?.addEventListener('cascadeChanged', (e) => {
+        lastCascade = e.detail;
+        renderCascadeState(e.detail, null);
+      });
+      cascade?.addEventListener('addressSelected', (e) => {
+        renderCascadeState(lastCascade, e.detail);
+      });
+      cascade?.addEventListener('error', (e) => console.error('Cascade error:', e.detail));
+
+      // ===== Dark mode: sync with system preference =====
+      const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      function applyDarkMode(dark) {
+        const theme = dark ? 'dark' : 'light';
+        widget?.setAttribute('data-theme', theme);
+        cascade?.setAttribute('data-theme', theme);
+      }
+      applyDarkMode(darkQuery.matches);
+      darkQuery.addEventListener('change', (e) => applyDarkMode(e.matches));
+    })();
   </script>
 </body>
 </html>

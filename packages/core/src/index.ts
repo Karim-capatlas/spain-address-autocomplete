@@ -12,7 +12,20 @@ export type {
   SearchHit,
   SearchResponse,
   Highlight,
+  DomicilioUnit,
+  DireccionNormalizada,
 } from './types.js'
+
+export {
+  parseDomicilio,
+  normalizeDomicilio,
+  merge,
+} from './domicilio.js'
+
+export type {
+  ParseDomicilioResult,
+  NormalizeDomicilioDeps,
+} from './domicilio.js'
 
 export {
   DEFAULT_TYPESENSE_CONFIG,

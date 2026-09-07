@@ -1,10 +1,10 @@
-/* address-search-es.css — MUI Joy aesthetic, Shadow-DOM scoped.
- * All colors are themeable via CSS custom properties on :host.
+/* address-cascade-es.css — classical admin form, Shadow-DOM scoped.
  *
- * Size tokens (`--aes-input-h`, `--aes-fs`, `--aes-pad`) default to Joy *small*
- * and are overridden by `:host([size='md'])` / `:host([size='lg'])`. The same
- * token header is duplicated in address-cascade-es.css (Stencil `styleUrl` is
- * per-component; `globalStyle` would escape the Shadow DOM). */
+ * The `--joy-*` color tokens + `--aes-*` size tokens are duplicated from
+ * address-search-es.css (Stencil `styleUrl` is per-component; `globalStyle`
+ * would escape the Shadow DOM). The street combobox reuses the `aes-*` option
+ * -list classes from utils/option-list.tsx, so those rules are duplicated too.
+ * `ace-*` classes are the cascade-specific form layout. */
 :host {
   --joy-primary: 67 90 210;
   --joy-surface: #ffffff;
@@ -59,12 +59,23 @@
 }
 * { box-sizing: border-box; }
 
-.aes { position: relative; width: 100%; font-size: var(--aes-fs); }
-
-/* icons */
 .aes-icon { width: 1em; height: 1em; display: block; }
 
-/* input row (Joy soft/outlined TextField) */
+/* ===== cascade form layout ===== */
+.ace { display: flex; flex-direction: column; gap: 0.75rem; width: 100%; }
+.ace-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.ace-label {
+  font-size: 0.75rem; font-weight: 600; color: var(--joy-fg-muted);
+  letter-spacing: 0.01em;
+}
+.ace-field-error { font-size: 0.75rem; color: #b91c1c; }
+:host([data-theme='dark']) .ace-field-error { color: #fca5a5; }
+
+/* street combobox wrapper (relative anchor for the dropdown) */
+.ace-combobox { position: relative; width: 100%; }
+.ace-hidden { display: none; }
+
+/* ===== shared combobox internals (aes-* — duplicated from search widget) ===== */
 .aes-input-row {
   display: flex; align-items: center; gap: 0.375rem; width: 100%;
   min-height: var(--aes-input-h);
@@ -89,8 +100,8 @@
 }
 .aes-input::placeholder { color: var(--joy-fg-muted); }
 .aes-input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.aes-input:disabled { cursor: not-allowed; opacity: 0.6; }
 
-/* trailing slot — spinner XOR clear, plus ✓ when selected (flex, no overlap) */
 .aes-trailing {
   flex: 0 0 auto; display: flex; align-items: center; gap: 0.25rem;
   padding-right: 0.125rem;
@@ -109,7 +120,6 @@
 }
 .aes-clear:hover { opacity: 1; background: var(--joy-hover-bg); }
 
-/* 2px indeterminate progress bar (stale results kept while re-searching) */
 .aes-progress {
   position: relative; height: 2px; margin-top: 2px; overflow: hidden;
   border-radius: 2px; background: var(--joy-skel);
@@ -124,90 +134,17 @@
   100% { transform: translateX(350%); }
 }
 
-/* province scope chip (Joy Chip, soft) */
-.aes-scope-chip {
-  display: inline-flex; align-items: center; gap: 0.3rem; margin: 0.3rem 0.3rem 0;
-  background: rgb(var(--joy-primary) / 0.08); color: rgb(var(--joy-primary));
-  border: 1px solid rgb(var(--joy-primary) / 0.25);
-  border-radius: var(--joy-radius-chip); padding: 0.15rem 0.55rem; font-size: 0.75rem;
-}
-.aes-scope-pin { display: flex; font-size: 0.8rem; }
-.aes-scope-chip button {
-  border: 0; background: transparent; color: inherit; opacity: 0.6;
-  cursor: pointer; line-height: 0; padding: 0.1rem; width: 1rem; height: 1rem;
-  display: flex; align-items: center; justify-content: center;
-}
-.aes-scope-chip button:hover { opacity: 1; }
-
-/* selected confirmation chip (detail="chip") */
-.aes-selected-chip {
-  display: flex; align-items: center; gap: 0.4rem; margin-top: 0.35rem;
-  background: rgb(34 197 94 / 0.08); border: 1px solid rgb(34 197 94 / 0.3);
-  border-radius: var(--joy-radius-item); padding: 0.3rem 0.6rem;
-  font-size: 0.8rem; color: var(--joy-fg);
-}
-.aes-selected-check { color: rgb(22 163 74); display: flex; font-size: 0.85rem; }
-.aes-selected-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.aes-selected-chip button {
-  margin-left: auto; border: 0; background: transparent; color: var(--joy-fg-muted);
-  cursor: pointer; line-height: 0; padding: 0.15rem; display: flex;
-  border-radius: var(--joy-radius-item); font-size: 0.85rem;
-}
-.aes-selected-chip button:hover { color: var(--joy-fg); background: var(--joy-hover-bg); }
-
-/* inline structured address card (detail="inline-card") */
-.aes-card {
-  margin-top: 0.5rem; background: var(--joy-surface);
-  border: 1px solid var(--joy-border); border-radius: var(--joy-radius-menu);
-  box-shadow: var(--joy-shadow-sm); overflow: hidden;
-}
-.aes-card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.5rem 0.75rem; background: var(--joy-surface-sub);
-  border-bottom: 1px solid var(--joy-border);
-}
-.aes-card-title {
-  display: flex; align-items: center; gap: 0.4rem;
-  font-size: 0.8125rem; font-weight: 600; color: var(--joy-fg);
-}
-.aes-card-check { color: rgb(22 163 74); display: flex; font-size: 0.9rem; }
-.aes-card-close {
-  border: 0; background: transparent; color: var(--joy-fg-muted); cursor: pointer;
-  padding: 0.2rem; border-radius: var(--joy-radius-item); line-height: 0;
-  font-size: 0.9rem; display: flex;
-}
-.aes-card-close:hover { color: var(--joy-fg); background: var(--joy-hover-bg); }
-.aes-card-body { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.aes-card-field { display: flex; flex-direction: column; gap: 0.0625rem; }
-.aes-card-label {
-  font-size: 0.6875rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--joy-fg-muted);
-}
-.aes-card-value { font-size: 0.9375rem; color: var(--joy-fg); }
-.aes-card-meta {
-  display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.25rem;
-  padding-top: 0.625rem; border-top: 1px solid var(--joy-border);
-}
-.aes-tag {
-  font-size: 0.6875rem; color: var(--joy-fg-muted); background: var(--joy-surface-sub);
-  padding: 0.15rem 0.55rem; border-radius: var(--joy-radius-chip);
-}
-.aes-tag strong { color: var(--joy-fg); margin-right: 0.25rem; font-weight: 700; }
-
-/* menu (Joy Popover) */
 .aes-menu {
   position: absolute; top: 100%; left: 0; right: 0; z-index: 9999;
   margin-top: 0.35rem; background: var(--joy-surface);
   border: 1px solid var(--joy-border); border-radius: var(--joy-radius-menu);
   box-shadow: var(--joy-shadow-pop);
-  max-height: 360px; overflow: auto; overscroll-contain: contain;
+  max-height: 320px; overflow: auto; overscroll-contain: contain;
   display: none; flex-direction: column;
 }
-.aes.open .aes-menu { display: flex; }
-
+.ace-combobox.open .aes-menu { display: flex; }
 .aes-listbox { display: flex; flex-direction: column; gap: var(--joy-gap); padding: 0.4rem; }
 
-/* error row (menu stays open) */
 .aes-error {
   display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
   padding: 0.75rem; color: var(--joy-fg);
@@ -223,7 +160,6 @@
 .aes-retry:hover { background: rgb(var(--joy-primary) / 0.06); }
 .aes-retry .aes-icon { width: 0.9em; height: 0.9em; }
 
-/* skeleton (Joy pulsing rows) */
 .aes-skel-area { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.3rem; }
 .skel-row { display: flex; }
 .skel-line { height: 12px; background: var(--joy-skel); border-radius: 6px;
@@ -231,7 +167,6 @@
 .skel-line.lab { width: 88%; }
 @keyframes aes-pulse { 0%, 100% { opacity: 0.32 } 50% { opacity: 1 } }
 
-/* group (municipio) — sticky non-interactive section label */
 .aes-group { display: flex; flex-direction: column; gap: 0.125rem; }
 .aes-group-header {
   position: sticky; top: 0; z-index: 1;
@@ -250,7 +185,6 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-left: auto;
 }
 
-/* option item — single line: highlighted street + muted trailing CP */
 .aes-item {
   padding: var(--aes-row-py) 0.7rem; border-radius: var(--joy-radius-item);
   cursor: pointer; background: transparent; color: var(--joy-fg);
@@ -272,7 +206,6 @@ mark { background: transparent; color: inherit; font-weight: 700; }
 
 .aes-empty { padding: 1rem; text-align: center; color: var(--joy-fg-muted); font-size: 0.85rem; }
 
-/* footer — count + "Powered by" backlink + INE attribution */
 .aes-footer {
   padding: 0.4rem 0.75rem; font-size: 0.75rem; color: var(--joy-fg-muted);
   display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
@@ -281,14 +214,44 @@ mark { background: transparent; color: inherit; font-weight: 700; }
 .aes-footer-count { min-width: 0; }
 .aes-footer-right { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
 .aes-powered {
-  color: rgb(var(--joy-primary)); text-decoration: none; font-weight: 600;
-  border-radius: 4px;
+  color: rgb(var(--joy-primary)); text-decoration: none; font-weight: 600; border-radius: 4px;
 }
 .aes-powered:hover { text-decoration: underline; }
 .aes-powered:focus-visible { outline: 2px solid rgb(var(--joy-primary)); outline-offset: 1px; }
 .aes-ine { color: var(--joy-fg-muted); white-space: nowrap; }
 
-.aes-sr {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+/* ===== geo autocomplete comboboxes ===== */
+.ace-combobox { position: relative; width: 100%; }
+.ace-combobox .aes-menu { display: none; }
+.ace-combobox.open .aes-menu { display: flex; }
+.ace-combobox .aes-listbox { max-height: 200px; }
+.ace-combobox .aes-item { padding: var(--aes-row-py) 0.7rem; }
+.ace-combobox .aes-item.hi { background: rgb(var(--joy-primary) / 0.08); border-color: rgb(var(--joy-primary) / 0.18); }
+
+/* Ensure geo inputs have same height as street inputs */
+.ace-combobox .aes-input {
+  flex: 1 1 auto; min-width: 0;
+  height: calc(var(--aes-input-h) - 3px);
+  border: 0; outline: 0; padding: 0 var(--aes-pad); font: inherit;
+  background: transparent; color: var(--joy-fg); font-size: var(--aes-fs);
 }
+.ace-combobox .aes-input::placeholder { color: var(--joy-fg-muted); }
+.ace-combobox .aes-input:disabled { cursor: not-allowed; opacity: 0.6; }
+
+/* Loading state for geo inputs */
+.ace-combobox .aes-input-row.loading { border-color: rgb(var(--joy-primary)); }
+
+/* ===== "datos del domicilio" unit inputs ===== */
+.ace-unit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.ace-unit-grid .ace-field { gap: 0.25rem; }
+.ace-unit-grid .aes-input {
+  flex: 1 1 auto; min-width: 0;
+  height: calc(var(--aes-input-h) - 3px);
+  border: 0; outline: 0; padding: 0 var(--aes-pad); font: inherit;
+  background: transparent; color: var(--joy-fg); font-size: var(--aes-fs);
+}
+

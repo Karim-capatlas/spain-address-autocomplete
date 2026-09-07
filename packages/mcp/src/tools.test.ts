@@ -33,13 +33,32 @@ function fakeDeps(records: AddressRecord[], total = records.length) {
 }
 
 describe('normalize_address', () => {
-  test('returns the single best structured match', async () => {
-    const result = await normalizeAddress({ text: 'C/ Mayor 12 3ºB, Madrid' }, fakeDeps([hit]))
+  test('returns the merged street + parsed unit in Spanish shape', async () => {
+    const result = await normalizeAddress(
+      { text: 'C/ Mayor 12 3ºB, Madrid' },
+      fakeDeps([hit]),
+    )
     const parsed = JSON.parse(result.content[0]?.text ?? '{}') as Record<string, unknown>
     expect(parsed.via_tipo).toBe('Calle')
     expect(parsed.via_nombre).toBe('Mayor')
     expect(parsed.municipio_id).toBe('28079')
     expect(parsed.codigo_postal).toBe('28013')
+    expect(parsed.numero).toBe('12')
+    expect(parsed.piso).toBe('3º')
+    expect(parsed.puerta).toBe('B')
+    expect(parsed.confidence).toBe('parcial')
+  })
+
+  test('explicit markers yield exact confidence', async () => {
+    const result = await normalizeAddress(
+      { text: 'C/ Mayor nº 12 piso 3º puerta B' },
+      fakeDeps([hit]),
+    )
+    const parsed = JSON.parse(result.content[0]?.text ?? '{}') as Record<string, unknown>
+    expect(parsed.numero).toBe('12')
+    expect(parsed.piso).toBe('3º')
+    expect(parsed.puerta).toBe('B')
+    expect(parsed.confidence).toBe('exact')
   })
 
   test('reports no_match on empty results', async () => {
@@ -48,7 +67,7 @@ describe('normalize_address', () => {
     expect(parsed.error).toBe('no_match')
   })
 
-  test('strips house numbers before searching (verified via injected spy)', async () => {
+  test('strips the unit before searching (verified via injected spy)', async () => {
     let seenQuery = ''
     const deps = {
       search: async (options: { query: string }) => {
@@ -58,6 +77,28 @@ describe('normalize_address', () => {
     } as never
     await normalizeAddress({ text: 'Gran Via 12' }, deps)
     expect(seenQuery).toBe('Gran Via')
+  })
+
+  test('routes a 5-digit postal code to the CP filter', async () => {
+    let seenQuery = ''
+    let seenCp = ''
+    const deps = {
+      search: async (options: { query: string; filterByCP?: string }) => {
+        seenQuery = options.query
+        seenCp = options.filterByCP ?? ''
+        return { records: [hit], groups: [], total: 1, took_ms: 1 }
+      },
+    } as never
+    await normalizeAddress({ text: 'Gran Via 12 28013' }, deps)
+    expect(seenQuery).toBe('Gran Via')
+    expect(seenCp).toBe('28013')
+  })
+
+  test('S/N input yields sin_numero with null numero', async () => {
+    const result = await normalizeAddress({ text: 'Calle Mayor S/N Madrid' }, fakeDeps([hit]))
+    const parsed = JSON.parse(result.content[0]?.text ?? '{}') as Record<string, unknown>
+    expect(parsed.sin_numero).toBe(true)
+    expect(parsed.numero).toBeNull()
   })
 })
 
