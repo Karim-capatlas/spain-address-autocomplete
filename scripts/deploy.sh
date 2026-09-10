@@ -115,14 +115,18 @@ if [ "${#PRESENT[@]}" -gt 0 ]; then
   log "restarted: ${PRESENT[*]}"
 fi
 
-# Health checks (best-effort; a failure marks the deploy failed so it retries).
-sleep 2
+# Health checks — retry, because tsx services need a few seconds to boot.
 FAILED=0
 check() {
-  if ! curl -fsS --max-time 5 "$1" >/dev/null 2>&1; then
-    log "health check failed: $1"
-    FAILED=1
-  fi
+  local url="$1" attempt
+  for attempt in $(seq 1 20); do
+    if curl -fsS --max-time 3 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  log "health check failed: $url"
+  FAILED=1
 }
 check "http://127.0.0.1:5978/api/geo/provincias"
 check "http://127.0.0.1:8787/health"
