@@ -22,7 +22,7 @@ This repo provides:
 - **Search layer** — **Typesense** (default, local Docker HTTP/REST) with fuzzy
   prefix + typo matching (Levenshtein 1) for OCR noise; Upstash Redis Search is
   available as an opt-in backend
-- **MCP interface** — stdio MCP server exposing `normalize_address` + `search_addresses` tools
+- **MCP interface** — MCP server exposing `normalize_address` + `search_addresses` tools over **stdio and Streamable HTTP** (`/mcp`)
 - **Cascade interface** — Hono HTTP server (`packages/cascade/`) replacing the
   external `geoapi.es` router, serving the provincia→municipio→CP dropdown
   cascade from a dedicated `cascade_es` **Typesense** collection derived from the
@@ -72,7 +72,7 @@ client-side. An **MCP server** provides the ideal bridge:
 │       ▼                                                                        │
 │   OCR text: "Calle Mayor, 28013 Madrid"                                        │
 │       │                                                                        │
-│       ├──── (1) MCP stdio call ───► packages/mcp/                              │
+│       ├──── (1) MCP stdio/HTTP call ───► packages/mcp/                         │
 │       │    normalize_address("Calle Mayor, 28013 Madrid")                      │
 │       │    → @spain-address/core → Typesense (default @127.0.0.1:8108)        │
 │       │                           Upstash Redis Search (opt-in: USE_UPSTASH=1) │
@@ -113,8 +113,8 @@ client-side. An **MCP server** provides the ideal bridge:
 - **Phase 1** — ETL pipeline (INE parser → normalized JSONL, 749,261 records)
 - **Phase 2** — Typesense schema (`callejero_es`) + ingestion + `searchAddresses()` in `packages/core`
 - **Phase 3** — Stencil widget + React wrapper (`packages/widget`)
-- **Phase 3.5** — `packages/mcp` (stdio JSON-RPC server with `normalize_address` / `search_addresses`), `packages/upstash` (opt-in Redis Search schema/client/import CLI), `packages/cascade` (Typesense HTTP store), `packages/proxy` (CORS-enabled BFF). `core`'s `createSearchClient()` **defaults to Typesense**; Upstash is opt-in.
-- **Phase 3.5 (live verification)** — 749,261 docs indexed into local Typesense (`typesense/typesense:30.2`) in ~5–7 min on 2 vCores; searches verified against the street index ("Gran Vía" → **131** national hits; CP-28013 + "mayor" → exactly `Calle Mayor, Madrid`). Toolchain: typecheck 9/9 · lint 0 errors · build 9/9 · **138 tests pass (13 files)**
+- **Phase 3.5** — `packages/mcp` (MCP server over **stdio + Streamable HTTP** with `normalize_address` / `search_addresses`), `packages/upstash` (opt-in Redis Search schema/client/import CLI), `packages/cascade` (Typesense HTTP store), `packages/proxy` (CORS-enabled BFF). `core`'s `createSearchClient()` **defaults to Typesense**; Upstash is opt-in.
+- **Phase 3.5 (live verification)** — 749,261 docs indexed into local Typesense (`typesense/typesense:30.2`) in ~5–7 min on 2 vCores; searches verified against the street index ("Gran Vía" → **131** national hits; CP-28013 + "mayor" → exactly `Calle Mayor, Madrid`). Toolchain: typecheck 9/9 · lint 0 errors · build 9/9 · **190 tests pass (17 files)**
 - **Cascade server (live-verified, on `calle.alami.es`)** — `packages/cascade/` Hono app replaces the
   external `geoapi.es` router for the provincia→municipio→CP form dropdown, backed by the
   `cascade_es` Typesense collection: **52 provincias, 8,106 municipios, 10,127 CPs** derived
@@ -126,8 +126,8 @@ client-side. An **MCP server** provides the ideal bridge:
 - **Typesense (local):** `docker compose up -d typesense` → `callejero_es` (749,261 docs) + `cascade_es` (18,285 docs) on `127.0.0.1:8108`, key `xyz`, image `typesense/typesense:30.2` (named volume persists data)
 - **Upstash (opt-in):** not configured in this deployment — set `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` and use `pnpm upstash:import` to seed it
 - **Snapshot:** `packages/data/snapshots/callejero_2026-01.jsonl.gz` (21 MB, 749,261 records)
-- **BFFs (systemd):** `spain-cascade` (:5978) + `spain-proxy` (:8787)
-- **Tunnel:** `cloudflared` service, public hostnames `calle.alami.es/api/geo`→:5978, catch-all→:8787
+- **Services (systemd):** `spain-cascade` (:5978) + `spain-proxy` (:8787) + `spain-mcp` (:8789, `/mcp`)
+- **Tunnel:** `cloudflared` service, public hostnames `calle.alami.es/api/geo`→:5978, `/mcp`→:8789, catch-all→:8787
 - **Repo:** https://github.com/Karim-capatlas/spain-address-autocomplete (public)
 
 ### Data reference
@@ -162,9 +162,9 @@ client-side. An **MCP server** provides the ideal bridge:
 | 7 | Full DNI/TIE OCR pipeline integration | 🔲 Future |
 
 ### Phase 3.5: MCP server + Typesense-default store
-`normalize_address("Calle Mayor, 28013 Madrid")` → structured `{ via_tipo, via_nombre, via_nombre_completo, municipio, municipio_id, provincia, provincia_id, comunidad_autonoma, codigo_postal, label }` via MCP, served by Typesense by default:
+`normalize_address("Calle Mayor, 28013 Madrid")` → structured `{ via_tipo, via_nombre, via_nombre_completo, municipio, municipio_id, provincia, provincia_id, comunidad_autonoma, codigo_postal, label, numero, piso, puerta, escalera, bloque, portal, kilometros, sin_numero, unidad_raw, confidence }` via MCP, served by Typesense by default:
 
-- [x] `packages/mcp/` stdio JSON-RPC server (minimal, no SDK dep): `normalize_address(text)`, `search_addresses(query, filters?)`
+- [x] `packages/mcp/` MCP server on the official SDK low-level `Server`, driving **stdio + Streamable HTTP** (`/mcp`, stateful sessions, optional `MCP_AUTH_TOKEN`): `normalize_address(text)`, `search_addresses(query, filters?)`
 - [x] `packages/upstash/` opt-in: `FT.CREATE` schema (TEXT weights 5/3/1/1 + TAG filters), REST client + import CLI
 - [x] `packages/cascade/` ported off redis-stack to a Typesense HTTP store (Worker-reachable), composite `type:code` ids, internal 250-doc pagination
 - [x] `core`'s `createSearchClient()` defaults to Typesense; Upstash only when `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`TOKEN`
@@ -231,7 +231,7 @@ pnpm install --frozen-lockfile
 
 # Verify (Phase 0–3.5 — all green)
 pnpm typecheck    # 9 packages, green
-pnpm test         # 138 tests (13 files), passing
+pnpm test         # 190 tests (17 files), passing
 pnpm build        # 9 packages, builds
 
 # 2. Generate the INE dataset (snapshot is not committed)
@@ -246,8 +246,9 @@ curl http://127.0.0.1:8108/health    # → {"ok":true}
 # 4. Import the street index into Typesense (~5–7 min on 2 vCores)
 pnpm typesense:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop --batch-size 1000
 
-# 5. MCP server (stdio JSON-RPC)
+# 5. MCP server (stdio JSON-RPC, default)
 pnpm --filter @spain-address/mcp start
+#    …or Streamable HTTP: pnpm --filter @spain-address/mcp start:http  →  :8789/mcp
 
 # 6. Cascade server (provincia → municipio → CP dropdown)
 pnpm cascade:import -- --snapshot packages/data/snapshots/callejero_2026-01.jsonl.gz --drop

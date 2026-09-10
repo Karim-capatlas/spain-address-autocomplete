@@ -12,13 +12,14 @@ snapshot 2026-01). El backend por defecto, auto-hospedable, es **Typesense**
 alternativa.
 
 Demo en vivo: **https://calle.alami.es** (VPS OVH-1 detrás de un túnel de
-Cloudflare: cascada provincia→municipio→CP en `:5978`, búsqueda difusa en `:8787`).
+Cloudflare: cascada provincia→municipio→CP en `:5978`, búsqueda difusa en `:8787`,
+MCP Streamable HTTP en `/mcp` `:8789`).
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
 ![Node 22](https://img.shields.io/badge/Node-22-339933)
-![MCP](https://img.shields.io/badge/protocol-MCP%20stdio-blueviolet)
-![Tests](https://img.shields.io/badge/tests-138%20passing-brightgreen)
+![MCP](https://img.shields.io/badge/protocol-MCP%20stdio%20%2B%20HTTP-blueviolet)
+![Tests](https://img.shields.io/badge/tests-190%20passing-brightgreen)
 ![Live demo](https://img.shields.io/badge/demo-calle.alami.es-33cc77)
 
 > Aún no hay GIF — ejecuta `curl "https://calle.alami.es/api/address-search?q=gran%20via"` y verás 131 coincidencias para `Calle Gran Vía, …` en toda España. Esa es toda la funcionalidad en una sola petición.
@@ -28,11 +29,11 @@ _¿Inglés? [Leer este README en inglés](./README.en.md)._
 ## Qué hace
 
 ```jsonc
-// Llamada a la herramienta MCP
+// Llamada a la herramienta MCP (texto ruidoso de OCR)
 { "name": "normalize_address",
-  "arguments": { "text": "C/ Gran via 12, 28013 Madrid" } }   // ← texto ruidoso de OCR
+  "arguments": { "text": "C/ Gran via 12 3ºB, 28013 Madrid" } }
 
-// Respuesta
+// Respuesta — calle + "datos del domicilio" extraídos de la entrada
 {
   "via_tipo": "Calle",
   "via_nombre": "Gran Vía",
@@ -41,13 +42,20 @@ _¿Inglés? [Leer este README en inglés](./README.en.md)._
   "provincia": "Madrid",        "provincia_id": "28",
   "comunidad_autonoma": "Comunidad de Madrid",
   "codigo_postal": "28013",
-  "label": "Calle Gran Vía, Madrid (28013)"
+  "label": "Calle Gran Vía, Madrid (28013)",
+  "numero": "12", "piso": "3º", "puerta": "B",   // ← unidad parseada (input-side)
+  "escalera": null, "bloque": null, "portal": null, "kilometros": null,
+  "sin_numero": false, "unidad_raw": "12 3ºB", "confidence": "parcial"
 }
 ```
 
-Se separan los números de portal (`C/ Mayor 12 3ºB` → `Calle Mayor`), un código
-de 5 dígitos se detecta automáticamente como código postal, y la búsqueda difusa
+El número de portal y la unidad (`número`, `piso`, `puerta`, `portal`, `bloque`,
+`escalera`, `Km`) se separan del texto de calle para buscar solo la vía, y se
+devuelven en la respuesta (el índice INE no contiene portales). Un código de 5
+dígitos se detecta automáticamente como código postal, y la búsqueda difusa
 (Levenshtein 1–2) tolera errores de OCR como `Grn Via` o `2801A`.
+`search_addresses` hace lo mismo: acepta una dirección completa y devuelve
+`{ query, unidad, total, groups }`.
 
 ## Por qué existe
 
@@ -73,7 +81,7 @@ de 5 dígitos se detecta automáticamente como código postal, y la búsqueda di
 | Verificación en vivo: `"Gran Vía"` (nacional) | 131 coincidencias |
 | Verificación en vivo: CP `28013` + `"mayor"` | exactamente 1 — `Calle Mayor, Madrid` |
 | Demo en vivo | https://calle.alami.es (Typesense + túnel Cloudflare) |
-| Tests | 138 (13 archivos) |
+| Tests | 190 (17 archivos) |
 | Toolchain | typecheck 9/9 · lint 0 errores · build 9/9 |
 
 ## Arquitectura
@@ -88,7 +96,7 @@ de 5 dígitos se detecta automáticamente como código postal, y la búsqueda di
 │       ▼                                                                        │
 │   Texto OCR: "Calle Mayor, 28013 Madrid"                                       │
 │       │                                                                        │
-│       ├──── (1) Llamada MCP stdio ──► packages/mcp/                            │
+│       ├──── (1) Llamada MCP stdio+HTTP ──► packages/mcp/                       │
 │       │    normalize_address("Calle Mayor, 28013 Madrid")                      │
 │       │    → @spain-address/core → Typesense (por defecto @127.0.0.1:8108)    │
 │       │                           Upstash Redis Search (opcional: USE_UPSTASH=1)│
@@ -112,7 +120,7 @@ Tres formas de consumir el mismo dataset:
 
 | Interfaz | Qué es | Docs |
 |---|---|---|
-| Servidor MCP | servidor MCP stdio con las herramientas `normalize_address` + `search_addresses` — para Claude Desktop, Cursor o cualquier agente MCP | [packages/mcp](./packages/mcp/README.md) |
+| Servidor MCP | servidor MCP con transporte **stdio y Streamable HTTP** (`/mcp`) y las herramientas `normalize_address` + `search_addresses` — para Claude Desktop, Cursor o cualquier agente MCP | [packages/mcp](./packages/mcp/README.md) |
 | Servidor de cascada | API HTTP Hono (`packages/cascade/`) que reemplaza al router externo `geoapi.es`, sirviendo la cascada provincia→municipio→CP (búsquedas de sub-ms) | [packages/cascade](./packages/cascade/README.md) |
 | Widget | Web Component Stencil `<address-search-es>` + wrapper React: resultados agrupados, detección automática de CP, ARIA completo, tema oscuro | [packages/widget](./packages/widget/README.md) |
 
@@ -159,6 +167,9 @@ pnpm typesense:import -- --snapshot packages/data/snapshots/callejero_2026-01.js
 
 # Ejecutar el servidor (JSON-RPC stdio por stdin/stdout)
 pnpm --filter @spain-address/mcp start
+
+# …o el transporte Streamable HTTP en http://localhost:8789/mcp
+pnpm --filter @spain-address/mcp start:http
 ```
 
 `createSearchClient()` elige **Typesense** (local Docker en `127.0.0.1:8108`) por defecto;
@@ -203,7 +214,7 @@ Configuración de Cursor y esquemas completas de herramientas: [packages/mcp/REA
 | [`core`](./packages/core) | tipos `AddressRecord` + `searchAddresses()` (Typesense por defecto; Upstash opcional) + fábrica `createSearchClient()` |
 | [`typesense`](./packages/typesense) | **Backend por defecto**: esquema Typesense + CLI de importación por lotes (`pnpm typesense:import`) |
 | [`upstash`](./packages/upstash) | Esquema + CLI de importación para Upstash Redis Search (opt-in vía `USE_UPSTASH=1`, `pnpm upstash:import`) |
-| [`mcp`](./packages/mcp) | servidor MCP stdio — `normalize_address` + `search_addresses` |
+| [`mcp`](./packages/mcp) | servidor MCP — **stdio + Streamable HTTP** (`/mcp`), herramientas `normalize_address` + `search_addresses` |
 | [`cascade`](./packages/cascade) | servidor Hono (`/api/geo/*`) respaldado por la colección `cascade_es` de Typesense (HTTP/REST) |
 | [`proxy`](./packages/proxy) | proxy BFF (`GET /api/address-search`) — mantiene las credenciales de búsqueda en el servidor |
 | [`widget`](./packages/widget) | componente web Stencil `<address-search-es>` + wrapper React |
@@ -215,7 +226,7 @@ Configuración de Cursor y esquemas completas de herramientas: [packages/mcp/REA
 pnpm typecheck   # 9/9 paquetes
 pnpm lint        # 0 errores
 pnpm build        # 9/9 paquetes
-pnpm test         # 138 tests (13 archivos)
+pnpm test         # 190 tests (17 archivos)
 pnpm test:e2e     # Playwright (widget)
 ```
 

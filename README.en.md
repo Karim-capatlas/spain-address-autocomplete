@@ -8,13 +8,14 @@ snapshot 2026-01). The default, self-hostable backend is **Typesense** (local
 Docker, HTTP/REST); **Upstash Redis Search** is available as an opt-in.
 
 Live demo: **https://calle.alami.es** (OVH VPS-1 fronted by a Cloudflare Tunnel —
-provincia → municipio → CP cascade on `:5978`, fuzzy street search on `:8787`).
+provincia → municipio → CP cascade on `:5978`, fuzzy street search on `:8787`,
+MCP Streamable HTTP at `/mcp` `:8789`).
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
 ![Node 22](https://img.shields.io/badge/Node-22-339933)
-![MCP](https://img.shields.io/badge/protocol-MCP%20stdio-blueviolet)
-![Tests](https://img.shields.io/badge/tests-138%20passing-brightgreen)
+![MCP](https://img.shields.io/badge/protocol-MCP%20stdio%20%2B%20HTTP-blueviolet)
+![Tests](https://img.shields.io/badge/tests-190%20passing-brightgreen)
 ![Live demo](https://img.shields.io/badge/demo-calle.alami.es-33cc77)
 
 _This README is also available in [español](./README.md)._)
@@ -24,11 +25,11 @@ _This README is also available in [español](./README.md)._)
 ## What it does
 
 ```jsonc
-// MCP tool call
+// MCP tool call (noisy OCR text)
 { "name": "normalize_address",
-  "arguments": { "text": "C/ Gran via 12, 28013 Madrid" } }   // ← noisy OCR text
+  "arguments": { "text": "C/ Gran via 12 3ºB, 28013 Madrid" } }
 
-// Response
+// Response — street + "datos del domicilio" parsed from the input
 {
   "via_tipo": "Calle",
   "via_nombre": "Gran Vía",
@@ -37,13 +38,19 @@ _This README is also available in [español](./README.md)._)
   "provincia": "Madrid",        "provincia_id": "28",
   "comunidad_autonoma": "Comunidad de Madrid",
   "codigo_postal": "28013",
-  "label": "Calle Gran Vía, Madrid (28013)"
+  "label": "Calle Gran Vía, Madrid (28013)",
+  "numero": "12", "piso": "3º", "puerta": "B",   // ← parsed unit (input-side)
+  "escalera": null, "bloque": null, "portal": null, "kilometros": null,
+  "sin_numero": false, "unidad_raw": "12 3ºB", "confidence": "parcial"
 }
 ```
 
-House numbers are stripped (`C/ Mayor 12 3ºB` → `Calle Mayor`), a 5-digit input is
+The house number and unit (`número`, `piso`, `puerta`, `portal`, `bloque`,
+`escalera`, `Km`) are split off the street text so only the vía is searched, and
+returned in the response (the INE index has no portal numbers). A 5-digit input is
 auto-detected as a postal code, and fuzzy matching (Levenshtein 1–2) tolerates OCR
-typos like `Grn Via` or `2801A`.
+typos like `Grn Via` or `2801A`. `search_addresses` does the same: it accepts a
+full address and returns `{ query, unidad, total, groups }`.
 
 ## Why it exists
 
@@ -62,7 +69,7 @@ typos like `Grn Via` or `2801A`.
 | Live check: `"Gran Vía"` (national) | 131 hits |
 | Live check: CP `28013` + `"mayor"` | exactly 1 hit — `Calle Mayor, Madrid` |
 | Live demo | https://calle.alami.es (Typesense + Cloudflare Tunnel) |
-| Tests | 138 unit (13 files) |
+| Tests | 190 unit (17 files) |
 | Toolchain | typecheck 9/9 · lint 0 errors · build 9/9 |
 
 ## Architecture
@@ -71,7 +78,7 @@ typos like `Grn Via` or `2801A`.
 [DNI/TIE OCR pipeline — parent project]
   Browser: PaddleV6 + WebGPU (in-browser OCR, zero retention)
       │
-      ├── MCP stdio ──► packages/mcp        normalize_address / search_addresses
+      ├── MCP stdio/HTTP ──► packages/mcp   normalize_address / search_addresses
       │                    └── @spain-address/core ──► Typesense (default @127.0.0.1:8108)
       │                                       Upstash Redis Search (opt-in: USE_UPSTASH=1)
       └── HTTP ───────► packages/cascade    GET /api/geo/provincias | /municipios | /cps | /validate-cp
@@ -84,7 +91,7 @@ Three ways to consume the same dataset:
 
 | Interface | What it is | Docs |
 |---|---|---|
-| MCP server | stdio JSON-RPC server with `normalize_address` + `search_addresses` tools — for Claude Desktop, Cursor, or any MCP agent | [packages/mcp](./packages/mcp/README.md) |
+| MCP server | MCP server over **stdio and Streamable HTTP** (`/mcp`) with `normalize_address` + `search_addresses` tools — for Claude Desktop, Cursor, or any MCP agent | [packages/mcp](./packages/mcp/README.md) |
 | Cascade server | Hono HTTP API replacing geoapi.es for the provincia → municipio → CP dropdown cascade (sub-ms local lookups) | [packages/cascade](./packages/cascade/README.md) |
 | Widget | Framework-agnostic `<address-search-es>` Stencil web component + React wrapper: grouped results, CP auto-detection, ARIA-complete, dark-mode theming | [packages/widget](./packages/widget/README.md) |
 
@@ -131,6 +138,9 @@ pnpm typesense:import -- --snapshot packages/data/snapshots/callejero_2026-01.js
 
 # Run the server (stdio JSON-RPC on stdin/stdout):
 pnpm --filter @spain-address/mcp start
+
+# …or the Streamable HTTP transport at http://localhost:8789/mcp
+pnpm --filter @spain-address/mcp start:http
 ```
 
 `createSearchClient()` picks Typesense (local Docker on `127.0.0.1:8108`) by default;
@@ -175,7 +185,7 @@ Cursor config and full tool schemas: [packages/mcp/README.md](./packages/mcp/REA
 | [`core`](./packages/core) | `AddressRecord` types + backend-agnostic `searchAddresses()` + `createSearchClient()` (Typesense default; Upstash opt-in) |
 | [`typesense`](./packages/typesense) | **Default** Typesense schema + bulk-import CLI (`pnpm typesense:import`) |
 | [`upstash`](./packages/upstash) | Upstash Redis Search schema + import CLI (opt-in via `USE_UPSTASH=1`, `pnpm upstash:import`) |
-| [`mcp`](./packages/mcp) | stdio MCP server — `normalize_address` + `search_addresses` |
+| [`mcp`](./packages/mcp) | MCP server — **stdio + Streamable HTTP** (`/mcp`), `normalize_address` + `search_addresses` |
 | [`cascade`](./packages/cascade) | Hono cascade server (`/api/geo/*`) backed by the `cascade_es` Typesense collection (HTTP, Worker-reachable) |
 | [`proxy`](./packages/proxy) | BFF proxy (`GET /api/address-search`) — keeps search credentials server-side |
 | [`widget`](./packages/widget) | `<address-search-es>` Stencil web component + React wrapper |
@@ -187,7 +197,7 @@ Cursor config and full tool schemas: [packages/mcp/README.md](./packages/mcp/REA
 pnpm typecheck   # 9/9 packages
 pnpm lint        # 0 errors
 pnpm build        # 9/9 packages
-pnpm test         # 138 tests (13 files)
+pnpm test         # 190 tests (17 files)
 pnpm test:e2e     # Playwright (widget)
 ```
 
