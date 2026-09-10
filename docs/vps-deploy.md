@@ -1,22 +1,24 @@
 # VPS Deployment Guide — spain-address-autocomplete demo
 
-Target: **OVH VPS-1 2027** (2 vCores · 4 GB RAM · 40 GB NVMe) running the two
-HTTP BFFs for the public demo. Static examples/docs live on Cloudflare Pages;
+Target: **OVH VPS-1 2027** (2 vCores · 4 GB RAM · 40 GB NVMe) running the HTTP
+services for the public demo. Static examples/docs live on Cloudflare Pages;
 the VPS is exposed through a Cloudflare Tunnel on **`calle.alami.es`** (subdomain
 of the existing `alami.es` zone — no new domain purchase).
 
-> **Not deployed here:** the MCP server. It is a stdio process spawned by MCP
-> clients (Claude Desktop, Cursor) on the *user's* machine — there is nothing to
-> host. The VPS only serves the browser-facing demo APIs.
+> **The MCP server now has an HTTP transport.** Alongside local stdio mode
+> (spawned by Claude Desktop / Cursor), `@spain-address/mcp` runs as a
+> **Streamable HTTP** service at `/mcp` (see `packages/mcp/README.md`). It is
+> deployed below as a third systemd service behind the Tunnel so remote MCP
+> clients and Workers can reach it.
 
 ```
                                [OVH VPS  (127.0.0.1, localhost)]
 [Cloudflare Pages]                         ┌─ typesense :8108   (callejero_es 749K + cascade_es 18K)
  examples + widget  ──HTTPS──►  Tunnel     ├─ cascade BFF :5978  (provincia→municipio→CP, HTTP)
-(calle.alami.es)                          └─ proxy BFF   :<PROXY_PORT>  (fuzzy street search)
-        ▲                                       │  both query
-        │  (Workers can call these over        TypeSense HTTP/REST
-        │   the Tunnel — raw RESP is NOT
+(calle.alami.es)                          ├─ proxy BFF   :8787  (fuzzy street search)
+        ▲                                  └─ mcp    /mcp :8789  (Streamable HTTP, MCP tools)
+        │  (Workers can call these over        │  all query
+        │   the Tunnel — raw RESP is NOT       TypeSense HTTP/REST
         │   Worker-reachable, which is exactly
         │   why the cascade was ported off redis)
 ```
@@ -197,10 +199,10 @@ curl -s -H "x-typesense-api-key: xyz" "http://127.0.0.1:8108/collections/cascade
 
 ---
 
-## 7. Run the BFFs with systemd
+## 7. Run the services with systemd
 
-Typesense runs in Docker (restart policy `unless-stopped`). The two small Hono
-BFFs run as plain Node services — lighter than building images on 2 vCores.
+Typesense runs in Docker (restart policy `unless-stopped`). The three small Hono
+services run as plain Node services — lighter than building images on 2 vCores.
 
 The cascade BFF needs the Typesense connection + its port:
 
@@ -259,19 +261,51 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
+The MCP HTTP service (Streamable HTTP at `/mcp`):
+
+`/etc/systemd/system/spain-mcp.service`:
+
+```ini
+[Unit]
+Description=spain-address MCP server (Streamable HTTP)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+User=deploy
+WorkingDirectory=/home/deploy/spain-address-autocomplete
+Environment=TYPESENSE_HOST=127.0.0.1
+Environment=TYPESENSE_PORT=8108
+Environment=TYPESENSE_PROTOCOL=http
+Environment=TYPESENSE_API_KEY=xyz
+Environment=MCP_PORT=8789
+Environment=MCP_HOST=127.0.0.1
+# Public hostname(s) for DNS-rebinding protection (exact Host header; add :port if non-standard).
+Environment=MCP_ALLOWED_HOSTS=calle.alami.es
+# Optional shared secret: when set, clients must send `Authorization: Bearer <token>`.
+# Environment=MCP_AUTH_TOKEN=change-me
+ExecStart=/usr/bin/pnpm --filter @spain-address/mcp start:http
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
 > Replace `/usr/bin/pnpm` with your `which pnpm` output if different, and set `PORT`
 > to whatever `packages/proxy/src/cli.ts` exposes (currently `8787`).
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now spain-cascade spain-proxy
-systemctl status spain-cascade spain-proxy --no-pager
+sudo systemctl enable --now spain-cascade spain-proxy spain-mcp
+systemctl status spain-cascade spain-proxy spain-mcp --no-pager
 journalctl -u spain-cascade -f     # logs
 
 # Local smoke test
 curl localhost:5978/api/geo/provincias | head -c 200
 curl localhost:5978/api/geo/validate-cp?municipio=28079\&cp=28013   # → {"valid":true,"ineCode":"28079"}
 curl localhost:8787/health
+curl localhost:8789/health         # → {"ok":true}
 ```
 
 ---
@@ -297,14 +331,15 @@ systemctl status cloudflared --no-pager
 ```
 
 3. Back in the dashboard, open the tunnel → **Public hostnames** — and add
-   **one** hostname with **two** rules. The route prefixes never collide
-   (`cascade` owns `/api/geo/*`, the proxy owns `/api/address-search`), so a
-   single name fronts both services:
+   **one** hostname with **three** rules. The route prefixes never collide
+   (`cascade` owns `/api/geo/*`, the MCP service owns `/mcp`, the proxy is the
+   catch-all), so a single name fronts all services:
 
 | Order | Subdomain | Domain | Path | Service |
 |---|---|---|---|---|
 | 1 (first) | `calle` | `alami.es` | `^/api/geo` | `http://localhost:5978` |
-| 2 (catch-all) | `calle` | `alami.es` | *(empty)* | `http://localhost:8787` |
+| 2 | `calle` | `alami.es` | `^/mcp` | `http://localhost:8789` |
+| 3 (catch-all) | `calle` | `alami.es` | *(empty)* | `http://localhost:8787` |
 
    Rules evaluate top-down — the path rule must come first. The DNS record for
    `calle.alami.es` is created automatically, and TLS is covered by the existing
@@ -319,15 +354,20 @@ Verify from your Mac:
 curl https://calle.alami.es/api/geo/provincias | head -c 200
 curl "https://calle.alami.es/api/geo/validate-cp?municipio=28079&cp=28013"   # → {"valid":true,"ineCode":"28079"}
 curl "https://calle.alami.es/api/address-search?q=gran%20via" | head -c 300
+
+# MCP initialize over the Tunnel (returns capabilities + an Mcp-Session-Id header)
+curl -sS -X POST https://calle.alami.es/mcp \
+  -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1.0"}}}'
 ```
 
 ---
 
 ## 9. CORS — handled, but lock it down
 
-Both BFFs ship with permissive CORS (they reflect the request `Origin` by
+All services ship with permissive CORS (they reflect the request `Origin` by
 default so a Pages-hosted demo works immediately). In production, pin the
-allow-list via the env block in §7:
+allow-list via the env block in §7 (the MCP service also reads `CORS_ORIGINS`):
 
 ```ini
 Environment=CORS_ORIGINS=https://<your-site>.pages.dev
@@ -337,7 +377,7 @@ Then restart:
 
 ```bash
 cd ~/spain-address-autocomplete && git pull
-sudo systemctl restart spain-cascade spain-proxy
+sudo systemctl restart spain-cascade spain-proxy spain-mcp
 ```
 
 Point the Cloudflare Pages example at the single API base:
@@ -361,6 +401,11 @@ Point the Cloudflare Pages example at the single API base:
 - **Proxy port** — the proxy reads `PORT` (default `8787`, see
   `packages/proxy/src/cli.ts`); the service file in §7 sets `PORT=8787`.
   Update both if you change it.
+- **MCP HTTP auth & host allow-list** — `/mcp` is public unless `MCP_AUTH_TOKEN`
+  is set (then every request needs `Authorization: Bearer <token>`).
+  `MCP_ALLOWED_HOSTS` must contain the exact `Host` the Tunnel forwards
+  (`calle.alami.es`; include `:port` if non-standard) or the transport returns
+  `403` from DNS-rebinding protection.
 - **Imports are one-way & idempotent** — re-running `pnpm typesense:import …
   --drop` or `pnpm cascade:import … --drop` is safe; safe to redo after a data
   refresh.
@@ -371,8 +416,8 @@ Point the Cloudflare Pages example at the single API base:
 - **Typesense `per_page` ≤ 250** — the cascade store paginates internally; don't
   raise it.
 - **Cloudflare edge 403 = security challenge, not a tunnel/DNS error.** A proxied
-  `calle.alami.es` CNAME is correct and the tunnel connects (BFFs return `200` at
-  `localhost:5978`/`8787`), but the `alami.es` zone's defaults — **Bot Fight Mode**
+  `calle.alami.es` CNAME is correct and the tunnel connects (services return `200` at
+  `localhost:5978`/`8787`/`8789`), but the `alami.es` zone's defaults — **Bot Fight Mode**
   and **Browser Integrity Check** (and the "managed challenge") — return a `403
   Just a moment…` page for non-browser clients like `curl`/health probes. The fix
   is on the Cloudflare side, not the VPS: in the dashboard disable **Bot Fight
@@ -390,13 +435,13 @@ Point the Cloudflare Pages example at the single API base:
 
 - **INE data refresh (Jan + Jul):** re-run the ETL locally → `scp` the new
   snapshot → re-run both imports (step 6) →
-  `sudo systemctl restart spain-cascade spain-proxy`.
+  `sudo systemctl restart spain-cascade spain-proxy spain-mcp`.
 - **Updates:** `sudo apt update && sudo apt -y upgrade` monthly;
   unattended-upgrades already covers security patches.
 - **Backups:** VPS-1 includes a daily 24h snapshot of the Typesense data volume
   (`typesense-data`). The demo is fully reproducible from this guide + the repo,
   so backups are a convenience, not a lifeline.
-- **Logs:** `journalctl -u spain-cascade -u spain-proxy --since today`;
+- **Logs:** `journalctl -u spain-cascade -u spain-proxy -u spain-mcp --since today`;
   `docker compose logs -f typesense`.
 - **Typesense version:** pinned to `30.2` (matches the macOS Homebrew dev box).
   When you upgrade, re-index both collections after the version bump.

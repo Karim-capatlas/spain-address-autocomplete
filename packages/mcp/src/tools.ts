@@ -5,12 +5,18 @@
  * `@spain-address/core`:
  * - `normalize_address(text)` → single best structured match + parsed "datos del
  *   domicilio" unit (número, piso, puerta, portal, bloque, escalera, Km)
- * - `search_addresses(query, filters?)` → ranked street matches (indexed backend)
+ * - `search_addresses(query, filters?)` → ranked street matches, plus the same
+ *   parsed unit alongside (the unit is input-side; it never filters the index)
  */
 
 import type { AddressRecord, SearchResult } from '@spain-address/core'
 import type { SearchDependencies } from '@spain-address/core'
-import { searchAddresses, normalizeDomicilio } from '@spain-address/core'
+import {
+  extractCp,
+  normalizeDomicilio,
+  parseDomicilio,
+  searchAddresses,
+} from '@spain-address/core'
 
 /** Search function injection point — tests swap this for a fake. */
 export interface ToolDeps extends Partial<SearchDependencies> {
@@ -54,7 +60,7 @@ export const NORMALIZE_ADDRESS_TOOL = {
 export const SEARCH_ADDRESSES_TOOL = {
   name: 'search_addresses',
   description:
-    'Search the Spanish street index (749K records from INE Callejero). Returns ranked street matches with municipio grouping.',
+    'Search the Spanish street index (749K records from INE Callejero). Returns ranked street matches with municipio grouping. A full address is accepted: número/piso/puerta/portal/bloque/escalera/Km and a trailing postal code are parsed out (returned in `unidad`) and only the street line is searched.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -108,12 +114,18 @@ export async function normalizeAddress(
     { filterByProvincia: args.provincia_id },
   )
   if (!normalized) {
-    return jsonContent({ error: 'no_match', query: args.text })
+    const { query, unidad } = parseDomicilio(args.text)
+    return jsonContent({ error: 'no_match', query, unidad })
   }
   return jsonContent(normalized)
 }
 
-/** Implement `search_addresses`: pass-through to the backend with structured options. */
+/**
+ * Implement `search_addresses`: parse the "datos del domicilio" out of the
+ * query, search the street line (falling back to the raw query if the cleaned
+ * one returns nothing), and return the ranked groups plus the parsed `unidad`.
+ * An explicit `codigo_postal` argument wins over a CP found in the query.
+ */
 export async function searchAddressesTool(
   args: {
     query: string
@@ -125,17 +137,34 @@ export async function searchAddressesTool(
   deps: ToolDeps,
 ): Promise<ToolResult> {
   const run = deps.search ?? searchAddresses
-  const result: SearchResult = await run(
-    {
-      query: args.query,
-      perPage: args.per_page,
-      filterByProvincia: args.provincia_id,
-      filterByMunicipio: args.municipio_id,
-      filterByCP: args.codigo_postal,
-    },
-    backendDeps(deps),
-  )
+  const parsed = parseDomicilio(args.query)
+  const { query: street, cp } = extractCp(parsed.query)
+  const raw = args.query.trim()
+  const cleaned = street || raw
+
+  const search = (query: string, codigoPostal?: string): Promise<SearchResult> =>
+    run(
+      {
+        query,
+        perPage: args.per_page,
+        filterByProvincia: args.provincia_id,
+        filterByMunicipio: args.municipio_id,
+        filterByCP: codigoPostal,
+      },
+      backendDeps(deps),
+    )
+
+  let used = cleaned
+  let result = await search(cleaned, args.codigo_postal ?? cp)
+  // If stripping the unit (or a CP found in the query) left nothing, retry raw.
+  if (result.total === 0 && cleaned !== raw) {
+    used = raw
+    result = await search(raw, args.codigo_postal)
+  }
+
   return jsonContent({
+    query: used,
+    unidad: parsed.unidad,
     total: result.total,
     groups: result.groups.map((g) => ({
       municipio_id: g.municipio_id,

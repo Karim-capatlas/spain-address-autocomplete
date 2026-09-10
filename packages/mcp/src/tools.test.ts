@@ -61,10 +61,19 @@ describe('normalize_address', () => {
     expect(parsed.confidence).toBe('exact')
   })
 
-  test('reports no_match on empty results', async () => {
-    const result = await normalizeAddress({ text: 'zzz nonexistent' }, fakeDeps([]))
-    const parsed = JSON.parse(result.content[0]?.text ?? '{}') as { error?: string }
+  test('reports no_match on empty results, keeping the parsed unit', async () => {
+    const result = await normalizeAddress(
+      { text: 'Calle Inexistente 12 3ºB' },
+      fakeDeps([]),
+    )
+    const parsed = JSON.parse(result.content[0]?.text ?? '{}') as {
+      error?: string
+      unidad?: { numero?: string | null; piso?: string | null; puerta?: string | null }
+    }
     expect(parsed.error).toBe('no_match')
+    expect(parsed.unidad?.numero).toBe('12')
+    expect(parsed.unidad?.piso).toBe('3º')
+    expect(parsed.unidad?.puerta).toBe('B')
   })
 
   test('strips the unit before searching (verified via injected spy)', async () => {
@@ -115,6 +124,65 @@ describe('search_addresses', () => {
     }
     expect(parsed.total).toBe(5)
     expect(parsed.groups[0]?.items[0]?.label).toContain('Calle Mayor')
+  })
+
+  test('parses the unit, searches the street line, and returns unidad', async () => {
+    let seenQuery = ''
+    const deps = {
+      search: async (options: { query: string }) => {
+        seenQuery = options.query
+        return { records: [hit], groups: [{ ...hitGroup() }], total: 1, took_ms: 1 }
+      },
+    } as never
+    const result = await searchAddressesTool({ query: 'C/ Mayor 12 3ºB Madrid' }, deps)
+    const parsed = JSON.parse(result.content[0]?.text ?? '{}') as {
+      query: string
+      unidad: { numero: string | null; piso: string | null; puerta: string | null }
+    }
+    expect(seenQuery).toBe('C/ Mayor Madrid')
+    expect(parsed.query).toBe('C/ Mayor Madrid')
+    expect(parsed.unidad.numero).toBe('12')
+    expect(parsed.unidad.piso).toBe('3º')
+    expect(parsed.unidad.puerta).toBe('B')
+  })
+
+  test('routes a postal code found in the query to filterByCP', async () => {
+    let seenQuery = ''
+    let seenCp = ''
+    const deps = {
+      search: async (options: { query: string; filterByCP?: string }) => {
+        seenQuery = options.query
+        seenCp = options.filterByCP ?? ''
+        return { records: [hit], groups: [], total: 1, took_ms: 1 }
+      },
+    } as never
+    await searchAddressesTool({ query: 'Mayor 28013' }, deps)
+    expect(seenQuery).toBe('Mayor')
+    expect(seenCp).toBe('28013')
+  })
+
+  test('falls back to the raw query when the cleaned street line has no hits', async () => {
+    const seen: string[] = []
+    const deps = {
+      search: async (options: { query: string }) => {
+        seen.push(options.query)
+        const empty = options.query === 'Calle de Marzo'
+        return {
+          records: empty ? [] : [hit],
+          groups: empty ? [] : [{ ...hitGroup() }],
+          total: empty ? 0 : 1,
+          took_ms: 1,
+        }
+      },
+    } as never
+    const result = await searchAddressesTool({ query: 'Calle 8 de Marzo' }, deps)
+    const parsed = JSON.parse(result.content[0]?.text ?? '{}') as {
+      query: string
+      total: number
+    }
+    expect(seen).toEqual(['Calle de Marzo', 'Calle 8 de Marzo'])
+    expect(parsed.query).toBe('Calle 8 de Marzo')
+    expect(parsed.total).toBe(1)
   })
 })
 

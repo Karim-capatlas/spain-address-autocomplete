@@ -5,7 +5,18 @@ export {
   normalizeAddress,
   searchAddressesTool,
   dispatchTool,
+  type ToolDeps,
   type ToolResult,
 } from './tools.js'
 
-export { startServer, SERVER_INFO, PROTOCOL_VERSION } from './cli.js'
+export { createMcpServer, SERVER_INFO, type CreateMcpServerOptions } from './server.js'
+
+export {
+  createMcpHttpApp,
+  createMcpHttpService,
+  startHttpServer,
+  type McpHttpService,
+  type McpHttpServiceOptions,
+} from './http.js'
+
+export { startServer, main } from './cli.js'

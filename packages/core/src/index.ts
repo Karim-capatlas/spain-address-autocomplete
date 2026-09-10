@@ -18,6 +18,7 @@ export type {
 
 export {
   parseDomicilio,
+  extractCp,
   normalizeDomicilio,
   merge,
 } from './domicilio.js'

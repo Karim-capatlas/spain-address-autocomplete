@@ -425,7 +425,7 @@ export function parseDomicilio(text: string): ParseDomicilioResult {
 }
 
 /** Strip a 5-digit postal code from the text query (it routes to `filterByCP`). */
-function extractCp(query: string): { query: string; cp?: string } {
+export function extractCp(query: string): { query: string; cp?: string } {
   const m = query.match(/\b\d{5}\b/)
   if (!m) return { query }
   return { query: query.replace(/\b\d{5}\b/g, ' ').replace(/\s+/g, ' ').trim(), cp: m[0] }

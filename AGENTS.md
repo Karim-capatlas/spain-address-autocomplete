@@ -19,8 +19,8 @@ addresses from Spanish identity cards in-browser and normalizes them via MCP.
 - **Stack:** TypeScript (strict) · ESM · pnpm 9 workspaces · Turborepo · TS 5.5 / Node 22 · Vitest 2 · tsup · ESLint (flat) · Prettier (`singleQuote`, no semis)
 - **Data:** INE Callejero (`caj_esp_*.zip`) — 749,261 streets across 52 provinces, sourced from open government data
 - **Search:** **Typesense** (HTTP/REST, local `127.0.0.1:8108` dev / Upstash-hosted in prod) for street-level fuzzy address normalization; local `cascade_es` Typesense collection for the provincia→municipio→CP dropdown cascade — both derived from the same INE snapshot
-- **Current migration:** Typesense is the default backend; **Upstash Redis Search** is retained as an explicit opt-in (`USE_UPSTASH=1`); `packages/mcp/` wraps `searchAddresses()` as `normalize_address` + `search_addresses` tools
-- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, **138** tests green (13 files), 749K docs indexed & searched. **Backend default is now Typesense** (`createSearchClient()` defaults to Typesense over HTTP/REST; Upstash Redis Search is retained as an explicit opt-in via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`). Local dev uses the Homebrew Typesense server (`127.0.0.1:8108`, key `xyz`); Upstash Cloud REST is unit-tested only (no creds locally, live verification via local Typesense) · **`packages/cascade/` ✅ done & live-verified** — standalone Hono server replacing the `geoapi.es` provincia→municipio→CP router, backed by a dedicated `cascade_es` Typesense collection (HTTP/REST) built from the same INE snapshot (52 provincias, 8,106 municipios, 10,127 CPs). The cascade BFF is HTTP-addressable so it can sit behind a Cloudflare Tunnel and be called by a Worker; the Widget topology section (Phase 4) has the details.
+- **Current migration:** Typesense is the default backend; **Upstash Redis Search** is retained as an explicit opt-in (`USE_UPSTASH=1`); `packages/mcp/` wraps `searchAddresses()` as `normalize_address` + `search_addresses` tools over **stdio and Streamable HTTP**
+- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, **190** tests green (17 files), 749K docs indexed & searched. **Backend default is now Typesense** (`createSearchClient()` defaults to Typesense over HTTP/REST; Upstash Redis Search is retained as an explicit opt-in via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`). Local dev uses the Homebrew Typesense server (`127.0.0.1:8108`, key `xyz`); Upstash Cloud REST is unit-tested only (no creds locally, live verification via local Typesense) · **`packages/cascade/` ✅ done & live-verified** — standalone Hono server replacing the `geoapi.es` provincia→municipio→CP router, backed by a dedicated `cascade_es` Typesense collection (HTTP/REST) built from the same INE snapshot (52 provincias, 8,106 municipios, 10,127 CPs). The cascade BFF is HTTP-addressable so it can sit behind a Cloudflare Tunnel and be called by a Worker; the Widget topology section (Phase 4) has the details.
 
 ## Toolchain status (GREEN — do not regress)
 
@@ -30,7 +30,7 @@ Verified end-to-end on this machine:
 pnpm typecheck   # 9/9 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
 pnpm lint        # 8/8 tasks, 0 errors
 pnpm build       # 9/9 tasks — widget + cascade included
-pnpm test        # 138 tests pass (13 files)
+pnpm test        # 190 tests pass (17 files)
 ```
 
 - Root `vitest.config.ts` (`include: packages/**/src/**/*.{test,spec}.*`, v8, thresholds 0.8)
@@ -70,7 +70,12 @@ have >250 municipios).
 - Upstash path (`command`): `%term%` fuzzy operator (Levenshtein 1), `TAG` facets on municipio_id/provincia_id/codigo_postal, client-side grouping.
 
 **`MCP server (`packages/mcp/`):**
-- stdio transport (spawnable by Claude Desktop / Cursor / parent OCR pipeline)
+- **Two transports, one tool source** — official `@modelcontextprotocol/sdk`
+  low-level `Server` (`src/server.ts`) reusing `TOOLS` + `dispatchTool`:
+  - **stdio** (spawnable by Claude Desktop / Cursor / parent OCR pipeline) — `src/cli.ts`
+  - **Streamable HTTP** at `/mcp` + `/health` (stateful sessions, optional
+    `MCP_AUTH_TOKEN` bearer auth) — `src/http.ts`, Hono + `@hono/node-server`,
+    `MCP_PORT` default 8789
 - Tool `normalize_address(text: string)` → single best structured match
 - Tool `search_addresses(query: string, filters?)` → ranked matches
 - Uses `searchAddresses()` from `@spain-address/core` via `createSearchClient()` (Typesense by default; Upstash opt-in), so MCP gets the local/cloud HTTP backend by default.
@@ -317,7 +322,7 @@ Search (via `searchAddresses` against the built core):
 | `packages/proxy` | Hono BFF proxy (`GET /api/address-search`, `GET /health`); forwards `@spain-address/core`'s full `SearchDependencies` via `createSearchClient()` (Typesense-default) + CORS | ✅ Complete · Phase 3.5 Typesense-default |
 | `packages/react` | **Superseded** — replaced by the Stencil‑generated React target (`@spain-address/widget/react`) | n/a |
 | `packages/upstash` | **Upstash Redis Search** — FT.CREATE schema (`schema.ts`, TEXT weights 5/3/1/1 + TAG filters) + bulk-import CLI; query primitives/REST client now live in `@spain-address/core` and are re-exported here for backward compat (`search.ts`/`client.ts`) | ✅ Phase 3.5 done |
-| `packages/mcp` | **MCP server** — stdio JSON-RPC (`initialize`/`tools/list`/`tools/call`); `normalize_address` + `search_addresses` tools over `@spain-address/core` via `createSearchClient()` (Typesense default; Upstash opt-in) | ✅ Phase 3.5 done (live-verified) |
+| `packages/mcp` | **MCP server** — official `@modelcontextprotocol/sdk` low-level `Server` (`src/server.ts`) driving **stdio** + **Streamable HTTP** (`/mcp`, stateful sessions, optional `MCP_AUTH_TOKEN`) transports; `normalize_address` + `search_addresses` tools over `@spain-address/core` via `createSearchClient()` (Typesense default; Upstash opt-in) | ✅ Phase 3.5 done (live-verified) |
 | `packages/cascade` | **Cascade server** — standalone Hono app (`GET /api/geo/provincias`, `/municipios`, `/cps`, `/validate-cp`) backed by a dedicated `cascade_es` Typesense collection (HTTP/REST): 52 provincias, 8,106 municipios, 10,127 CPs. Replaces the external `geoapi.es` router with local sub-ms lookups; the HTTP/REST transport is Worker-reachable via a Cloudflare Tunnel (see Phase 4 / `docs/vps-deploy.md`). Import CLI (`pnpm cascade:import`) derives docs from the same ETL snapshot in one pass. | ✅ Live-verified (local Typesense, 18,285 docs)
 
 #### Phase 3.5 implementation notes (do not rediscover)
@@ -325,7 +330,7 @@ Search (via `searchAddresses` against the built core):
 - `packages/upstash/src/search.ts` builds `FT.SEARCH <index> "@tag:{v} %word1% %word2%" …` — `%term%` is Redis Search's fuzzy operator (Levenshtein 1), standing in for Typesense's `num_typos`. Special chars in user terms are escaped.
 - Upstash REST replies decode FT.SEARCH as a flat array `[total, key1, doc1, key2, doc2, …]`; docs may be flat `[field, value, …]` arrays or objects — `parseSearchReply` handles both. Grouping is done client-side (`groupRecords`) since AGGREGATE GROUPBY is deferred.
 - Import stores each record as one hash (`HSET callejero:<id> data <jsonl-line>`); read path parses JSON back to `AddressRecord`.
-- `packages/mcp/src/cli.ts` implements the MCP handshake minimally over newline-delimited JSON-RPC on stdio (no SDK dependency). Smoke-tested: `initialize`, `tools/list` respond correctly.
+- `packages/mcp/src/server.ts` builds the SDK `Server` (`tools/list` → `TOOLS`, `tools/call` → `dispatchTool`); `src/cli.ts` dispatches **stdio** vs **`http`** (Hono `src/http.ts`, `WebStandardStreamableHTTPServerTransport`). Smoke-tested: stdio `initialize`/`tools/list`, and HTTP `initialize` (issues `Mcp-Session-Id`) + `tools/list` respond correctly.
 - Phase 3.5 default-flip is **done**: `core`'s `searchAddresses(options, deps)` dispatches to the Upstash path when `deps.command` (a Redis `command(args)` fn) is present, else to Typesense when `deps.client` is present, else throws `'no backend configured'`. `createSearchClient()` now selects **Typesense by default** (`TYPESENSE_HOST`/`TYPESENSE_PORT`/`TYPESENSE_PROTOCOL`/`TYPESENSE_API_KEY`), and only selects Upstash when `USE_UPSTASH=1` is set **and** `UPSTASH_REDIS_REST_URL`+token env vars are present — so MCP/proxy/cascade use Typesense in both local and cloud deployments; Upstash Redis Search is retained for teams that want a Redis-protocol backend. The widget imports `searchAddressesTypesense` (the pure Typesense path) so no Upstash/FT.SEARCH code ships in the browser bundle. Live-verified locally against Typesense (callejero_es 749,261 docs; cascade_es 18,285 docs: 52 provincias, 8,106 municipios, 10,127 CPs; `q:"Gran Vía"`→131, `/validate-cp` 28079+28013→`{valid:true,ineCode:"28079"}`).
 
 #### "Datos del domicilio" parser (Phase 3.5, do not rediscover)
@@ -333,7 +338,7 @@ Search (via `searchAddresses` against the built core):
 - `packages/core/src/domicilio.ts` adds `parseDomicilio(text) → { query, unidad, heuristic }`, `normalizeDomicilio(text, deps, opts?)` and `merge(record, unidad, confidence)`. It extracts the **input-side** unit (número/piso/puerta/portal/bloque/escalera/Km) from noisy address text and returns the street-line `query` for `searchAddresses`. The unit is **never indexed** (the INE Callejero has no portal numbers) — `AddressRecord`/`toAddressRecord()`/the Typesense schema are **unchanged**.
 - Matching-only normalization mirrors `normalizeForSearch` (NFD strip diacritics, lowercase) but also unifies `ª°`→`º`, strips trailing periods (`n.` `km.` `esc.` `pl.`), and strips surrounding `,;` (internal `,` survives for `12,5` decimals). `unidad_raw` stays lossless (original raw substrings).
 - Rules: explicit marker keywords (`nº`, `planta/piso`, `puerta/pta`, `bloque/blq`, `portal/prtl`, `escalera/esc`, `km`, `s/n`) consume their next value; positional fallbacks then assign first bare number→`numero` (letter suffix stays, `"259d"`→`"259 D"`), following number/ordinal→`piso` (`"4º"`), isolated letter after piso→`puerta` (`"4º B"`→piso `4º`+puerta `B`). `Bajo/Entresuelo/Ático/Sótano/Principal` are piso values (never numbers). A 5-digit token is a CP and stays in `query` (routed to `filterByCP`). `heuristic` distinguishes `'parcial'` (positional) from `'exact'` (explicit markers / no unit).
-- Consumers: MCP `normalize_address` returns `DireccionNormalizada` (street + unit + categorical `confidence`); `search_addresses` stays street-only. Widget `<address-search-es>` runs `parseDomicilio` in `selectItem` and emits a new **`addressNormalized`** event (also renders Número/Piso/Puerta/… rows in `detail="inline-card"`). `<address-cascade-es>` adds free-text Número/Piso/Puerta/Portal/Bloque/Escalera inputs carried in `CascadeState` + `{prefix}_numero|_piso|_puerta|_portal|_bloque|_escalera` hidden inputs. Proxy exposes `GET /api/normalize`. Demo OCR examples + UI copy were rewritten to Spanish (the old `ine_id`/numeric `confidence` were dropped — portal INE ids are not derivable from Callejero data).
+- Consumers: MCP `normalize_address` returns `DireccionNormalizada` (street + unit + categorical `confidence`); `search_addresses` also parses the unit + a CP out of `query` (retrying the raw query on no hits) and returns `{ query, unidad, total, groups }`; `normalize_address`'s `no_match` keeps the parsed `unidad` too. Widget `<address-search-es>` runs `parseDomicilio` in `selectItem` and emits a new **`addressNormalized`** event (also renders Número/Piso/Puerta/… rows in `detail="inline-card"`). `<address-cascade-es>` adds free-text Número/Piso/Puerta/Portal/Bloque/Escalera inputs carried in `CascadeState` + `{prefix}_numero|_piso|_puerta|_portal|_bloque|_escalera` hidden inputs. Proxy exposes `GET /api/normalize`. Demo OCR examples + UI copy were rewritten to Spanish (the old `ine_id`/numeric `confidence` were dropped — portal INE ids are not derivable from Callejero data).
 
 ### `packages/etl` — key files
 - `src/index.ts` — `commander` CLI with `run` and `validate` subcommands.
@@ -366,7 +371,7 @@ pnpm install
 pnpm typecheck      # 9/9
 pnpm lint           # 0 errors
 pnpm build          # 9/9
-pnpm test           # 138 tests (13 files)
+pnpm test           # 190 tests (17 files)
 
 # ETL
 pnpm exec tsx packages/etl/src/index.ts run   --year 2026 --month 1 --provinces 28 \

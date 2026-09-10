@@ -10,24 +10,24 @@ structured fields: **via type, street name, provincia (+ code), municipio
 Backed by a **749,261-record** index of the Spanish street map
 (**INE Callejero**, 52 provinces), served by default over **Typesense** HTTP/REST
 (local Docker, `127.0.0.1:8108`) — with **Upstash Redis Search** available as an
-opt-in (`USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`TOKEN`) — and spoken to via
-the **stdio JSON-RPC** transport.
+opt-in (`USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`TOKEN`) — and exposed over two
+transports: **stdio JSON-RPC** (default) and **Streamable HTTP** (`/mcp`).
 
 ```
-[Claude Desktop / Cursor / parent pipeline]
-               │  JSON-RPC over stdio
-               ▼
-        @spain-address/mcp  ──►  searchAddresses()
-                                   │  Typesense (default) / Upstash (opt-in)
-                                   ▼
-                            749,261 INE streets
+[Claude Desktop / Cursor]   [remote MCP client / Worker]
+        │ stdio JSON-RPC           │ Streamable HTTP (POST/GET /mcp)
+        ▼                          ▼
+   @spain-address/mcp  ──►  searchAddresses()
+                              │  Typesense (default) / Upstash (opt-in)
+                              ▼
+                       749,261 INE streets
 ```
 
 ---
 
 ## <img src="https://img.shields.io/badge/status-live%20verified-16a34a?style=for-the-badge&labelColor=0f172a&logoColor=white" alt="Status: live verified" /> <img src="https://img.shields.io/badge/v0.1.0-0ea5e9?style=for-the-badge&labelColor=0f172a&logoColor=white" alt="Version" /> <img src="https://img.shields.io/badge/TypeScript-3178c6?style=for-the-badge&labelColor=0f172a&logoColor=white&logo=typescript" alt="TypeScript" /> <img src="https://img.shields.io/badge/MCP-0ea5e9?style=for-the-badge&labelColor=0f172a&logoColor=white" alt="MCP" /> <img src="https://img.shields.io/badge/Node-22-878e36?style=for-the-badge&labelColor=0f172a&logoColor=white&logo=node.js" alt="Node 22" /> <img src="https://img.shields.io/badge/license-MIT-0ea5e9?style=for-the-badge&labelColor=0f172a&logoColor=white" alt="License: MIT" />
 
-<img src="https://img.shields.io/badge/Phase_3.5-16a34a?style=flat-square&labelColor=0f172a&logoColor=white" alt="Phase 3.5" /> <img src="https://img.shields.io/badge/Privacy%20first-zero%20data%20retention-16a34a?style=flat-square&labelColor=0f172a&logoColor=white" alt="Zero data retention" /> <img src="https://img.shields.io/badge/Open%20source-%23212121?style=flat-square&labelColor=0f172a&logoColor=white" alt="Open source" /> <img src="https://img.shields.io/badge/INE%20Callejero-749K%20records-f59e0b?style=flat-square&labelColor=0f172a&logoColor=white" alt="INE Callejero data" /> <img src="https://img.shields.io/badge/Transport-stdio%20JSON--RPC-0ea5e9?style=flat-square&labelColor=0f172a&logoColor=white" alt="stdio transport" />
+<img src="https://img.shields.io/badge/Phase_3.5-16a34a?style=flat-square&labelColor=0f172a&logoColor=white" alt="Phase 3.5" /> <img src="https://img.shields.io/badge/Privacy%20first-zero%20data%20retention-16a34a?style=flat-square&labelColor=0f172a&logoColor=white" alt="Zero data retention" /> <img src="https://img.shields.io/badge/Open%20source-%23212121?style=flat-square&labelColor=0f172a&logoColor=white" alt="Open source" /> <img src="https://img.shields.io/badge/INE%20Callejero-749K%20records-f59e0b?style=flat-square&labelColor=0f172a&logoColor=white" alt="INE Callejero data" /> <img src="https://img.shields.io/badge/Transport-stdio%20%2B%20Streamable%20HTTP-0ea5e9?style=flat-square&labelColor=0f172a&logoColor=white" alt="stdio + Streamable HTTP transport" />
 
 ---
 
@@ -45,7 +45,10 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
 ## Features
 
 - **Two MCP tools** — `normalize_address` (best single match) and
-  `search_addresses` (ranked, municipio-grouped results).
+  `search_addresses` (ranked, municipio-grouped results). Both parse the input
+  "datos del domicilio" (número, piso, puerta, portal, bloque, escalera, Km) and
+  return it; `search_addresses` also accepts a full address and searches only the
+  street line.
 - **Fuzzy matching** — Levenshtein distance 1–2 on street / municipio / provincia
   for OCR-typo tolerance.
 - **Municipio grouping** — results roll up by town/neighborhood with a
@@ -57,8 +60,9 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
   server (the HTTP/REST backend reachable by Workers/cloud) and only opts into
   **Upstash Redis Search** when `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL` are set.
   No backend lock-in.
-- **Dependency-light** — minimal stdio JSON-RPC handshake written by hand
-  (the `@modelcontextprotocol/sdk` is a declared peer for future publishing).
+- **Two transports, one tool source** — stdio (Claude Desktop/Cursor) and
+  **Streamable HTTP** (`/mcp`, stateful sessions) are both driven by the official
+  `@modelcontextprotocol/sdk` low-level `Server` and the shared `TOOLS` manifest.
 - **Typed end-to-end** — strict TypeScript, `AddressRecord` flows from ETL →
   index → core → MCP → agent with one shape.
 
@@ -67,7 +71,7 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
 | Tool | Description |
 |---|---|
 | `normalize_address` | Normalize a noisy address string → the single best structured match. |
-| `search_addresses` | Search 749K INE streets → ranked, municipio-grouped matches. |
+| `search_addresses` | Search 749K INE streets → ranked, municipio-grouped matches + the parsed input `unidad`. |
 
 ### `normalize_address`
 
@@ -100,20 +104,32 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
 ### `search_addresses`
 
 ```jsonc
-// Request
+// Request — a full address is fine; the unit + CP are parsed out of `query`
 {
   "name": "search_addresses",
   "arguments": {
-    "query": "mayor",
+    "query": "C/ Mayor 12 3ºB, 28013",  // ← número/piso/puerta parsed into `unidad`
     "per_page": 10,             // ← optional, default 10
     "provincia_id": "28",       // ← optional INE province filter
     "municipio_id": "28079",    // ← optional 5-digit INE municipality filter
-    "codigo_postal": "28013"    // ← optional 5-digit postal-code filter
+    "codigo_postal": "28013"    // ← optional 5-digit postal-code filter (wins over a CP in `query`)
   }
 }
 
-// Response
+// Response — street matches grouped by municipio + the parsed input unit
 {
+  "query": "C/ Mayor",          // the street line actually searched
+  "unidad": {
+    "numero": "12",
+    "piso": "3º",
+    "puerta": "B",
+    "escalera": null,
+    "bloque": null,
+    "portal": null,
+    "kilometros": null,
+    "sin_numero": false,
+    "unidad_raw": "12 3ºB"
+  },
   "total": 5,
   "groups": [
     {
@@ -127,8 +143,7 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
           "via_nombre": "Mayor",
           "via_nombre_completo": "Calle Mayor",
           "codigo_postal": "28013",
-          "label": "Calle Mayor, Madrid (28013)",
-          "confidence": "exact"
+          "label": "Calle Mayor, Madrid (28013)"
           /* …provincia / comunidad_autonoma / IDs… */
         }
       ]
@@ -136,6 +151,10 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
   ]
 }
 ```
+
+> A query whose unit/CP stripping yields no street match is retried with the raw
+> text, so street names that legitimately contain a number (e.g. `Calle 8 de
+> Marzo`) still resolve.
 
 ## Install
 
@@ -155,16 +174,18 @@ entry `spain-address-mcp` → `./dist/cli.js`.
 
 ## Run
 
-The server speaks **stdio JSON-RPC** — it reads newline-delimited requests on
-`stdin` and writes newline-delimited responses on `stdout`. Spawn it from any
-MCP host:
+Two transports share the same tools. **stdio** (the default) reads
+newline-delimited JSON-RPC on `stdin` and writes responses on `stdout`; **HTTP**
+serves the MCP Streamable HTTP transport at `/mcp`.
 
 ```bash
-# Dev run (no build)
+# stdio (default) — spawn from any MCP host
 pnpm --filter @spain-address/mcp start
-
-# Production binary
 node ./packages/mcp/dist/cli.js
+
+# Streamable HTTP on MCP_PORT (default 8789)
+pnpm --filter @spain-address/mcp start:http
+node ./packages/mcp/dist/cli.js http
 ```
 
 ### Claude Desktop
@@ -209,6 +230,32 @@ Add a server entry to your Claude Desktop config:
 }
 ```
 
+### Streamable HTTP
+
+For remote/hosted clients — including the VPS behind the Cloudflare Tunnel (see
+[`docs/vps-deploy.md`](../../docs/vps-deploy.md)) — start the HTTP transport and
+point the client at the URL:
+
+```bash
+MCP_PORT=8789 MCP_HOST=0.0.0.0 node ./packages/mcp/dist/cli.js http
+# → MCP endpoint: http://localhost:8789/mcp
+# → health check: http://localhost:8789/health
+```
+
+| Env | Default | Purpose |
+|---|---|---|
+| `MCP_PORT` | `8789` | Listen port |
+| `MCP_HOST` | `0.0.0.0` | Listen host |
+| `MCP_AUTH_TOKEN` | unset | If set, require `Authorization: Bearer <token>` on `/mcp` |
+| `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1` (+ `:port`) | DNS-rebinding allow-list, matched against the `Host` header **including the port**. Empty string disables host validation |
+| `CORS_ORIGINS` | reflect any | Comma list of allowed browser origins |
+
+Sessions are **stateful**: the server issues an `Mcp-Session-Id` on
+`initialize` and keeps the session in memory; a `DELETE /mcp` closes it. Sessions
+do not survive a restart, so clients simply re-initialize. Inspect it with
+`npx @modelcontextprotocol/inspector` (transport: *Streamable HTTP*, URL
+`http://localhost:8789/mcp`).
+
 ## Backend configuration
 
 `createSearchClient()` (from `@spain-address/core`) selects a backend from the
@@ -232,15 +279,18 @@ environment at startup:
 
 ```
                      packages/mcp
-┌─────────────────────────────────────────────┐
-│  src/cli.ts        — stdio JSON-RPC loop    │
-│     ├─ initialize / ping                     │
-│     ├─ tools/list  → TOOLS manifest         │
-│     └─ tools/call  → dispatchTool(name)     │
-│                                               │
-│  src/tools.ts      — tool implementations   │
-│  src/index.ts      — public re-exports      │
-└───────────────┬─────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│  src/cli.ts     — entrypoint (stdio | http)  │
+│     stdio → StdioServerTransport              │
+│     http  → src/http.ts (Hono, /mcp)          │
+│                                                │
+│  src/server.ts  — createMcpServer()           │
+│     tools/list → TOOLS manifest              │
+│     tools/call → dispatchTool(name)          │
+│  src/http.ts    — Streamable HTTP + /health   │
+│  src/tools.ts   — tool implementations        │
+│  src/index.ts   — public re-exports           │
+└───────────────┬──────────────────────────────┘
                 │  searchAddresses(options, deps)
                 ▼
        @spain-address/core
@@ -308,7 +358,7 @@ pnpm --filter @spain-address/mcp build        # tsup → dist/
 # Type-check + lint + test
 pnpm --filter @spain-address/mcp typecheck    # tsc --noEmit
 pnpm --filter @spain-address/mcp lint         # eslint src/
-pnpm --filter @spain-address/mcp test         # vitest run (6 tests)
+pnpm --filter @spain-address/mcp test         # vitest run (18 tests)
 ```
 
 The CI gate for this package is green: typecheck, lint, and tests pass in the

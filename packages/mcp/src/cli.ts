@@ -1,118 +1,90 @@
+#!/usr/bin/env node
 /**
- * MCP server entry point (stdio transport).
+ * MCP server entry point — dual transport.
  *
- * Spawnable from Claude Desktop / Cursor / the parent OCR pipeline:
+ *   spain-address-mcp           # stdio JSON-RPC (default; Claude Desktop/Cursor)
+ *   spain-address-mcp http      # Streamable HTTP on MCP_PORT (default 8789)
+ *   spain-address-mcp --http    # same as above
+ *
+ * Both transports share the tools in `./tools.js` via `./server.js`
+ * (`createMcpServer`), so behavior is identical. Backend selection uses core's
+ * `createSearchClient()` (Typesense by default; Upstash opt-in).
+ *
+ * stdio client config:
  *   { "mcpServers": { "spain-address": { "command": "node",
  *       "args": ["/path/to/packages/mcp/dist/cli.js"],
- *       "env": { "TYPESENSE_HOST": "127.0.0.1", ... } } } }
- *
- * Implements the MCP handshake minimally over newline-delimited JSON-RPC so it
- * works without pulling the full SDK into the build (kept dependency-light by
- * design; swap for @modelcontextprotocol/sdk when publishing).
- *
- * Backend selection uses core's `createSearchClient()` (Phase 3.5): prefers
- * Upstash/Redis Search when UPSTASH_REDIS_REST_URL/TOKEN are set, falling back
- * to the local Typesense server. Set the env vars in the MCP server block:
- *   "env": { "UPSTASH_REDIS_REST_URL": "…", "UPSTASH_REDIS_REST_TOKEN": "…" }
+ *       "env": { "TYPESENSE_HOST": "127.0.0.1" } } } }
  */
 
-import { createInterface } from 'node:readline'
-import { dispatchTool, TOOLS } from './tools.js'
-import { createSearchClient } from '@spain-address/core'
+import { parseArgs } from 'node:util'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { createMcpServer } from './server.js'
+import { startHttpServer } from './http.js'
 
-interface JsonRpcRequest {
-  jsonrpc: '2.0'
-  id?: number | string
-  method: string
-  params?: Record<string, unknown>
+/** Start the stdio transport (spawned by an MCP host). */
+export async function startServer(): Promise<void> {
+  const server = createMcpServer()
+  const transport = new StdioServerTransport()
+  await server.connect(transport)
 }
 
-interface JsonRpcResponse {
-  jsonrpc: '2.0'
-  id: number | string | null
-  result?: unknown
-  error?: { code: number; message: string }
-}
+const USAGE = `spain-address-mcp — Spanish address normalization MCP server
 
-const SERVER_INFO = {
-  name: 'spain-address-autocomplete',
-  version: '0.1.0',
-}
+Usage:
+  spain-address-mcp          Start the stdio transport (default)
+  spain-address-mcp http     Start the Streamable HTTP server on MCP_PORT
 
-const PROTOCOL_VERSION = '2024-11-05'
+Options:
+  -h, --help                 Show this help
+      --http                 Alias for the "http" command
 
-export { SERVER_INFO, PROTOCOL_VERSION }
+Env: MCP_PORT, MCP_HOST, MCP_AUTH_TOKEN, MCP_ALLOWED_HOSTS, CORS_ORIGINS,
+     TYPESENSE_HOST, TYPESENSE_PORT, TYPESENSE_PROTOCOL, TYPESENSE_API_KEY
+`
 
-function respond(id: JsonRpcRequest['id'] | null, body: Omit<JsonRpcResponse, 'jsonrpc' | 'id'>): void {
-  process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: id ?? null, ...body })}\n`)
-}
-
-async function handle(req: JsonRpcRequest): Promise<void> {
-  switch (req.method) {
-    case 'initialize':
-      respond(req.id, {
-        result: {
-          protocolVersion: PROTOCOL_VERSION,
-          capabilities: { tools: {} },
-          serverInfo: SERVER_INFO,
-        },
-      })
-      break
-    case 'notifications/initialized':
-      // notification — no response
-      break
-    case 'ping':
-      respond(req.id, { result: {} })
-      break
-    case 'tools/list':
-      respond(req.id, { result: { tools: TOOLS } })
-      break
-    case 'tools/call': {
-      const name = String(req.params?.name ?? '')
-      const args = (req.params?.arguments ?? {}) as Record<string, unknown>
-      try {
-        const deps = createSearchClient()
-        const toolResult = await dispatchTool(name, args, deps)
-        if (!toolResult) {
-          respond(req.id, { error: { code: -32602, message: `Unknown tool: ${name}` } })
-          return
-        }
-        respond(req.id, {
-          result: { content: toolResult.content, isError: false },
-        })
-      } catch (err) {
-        respond(req.id, {
-          result: {
-            content: [{ type: 'text', text: String(err) }],
-            isError: true,
-          },
-        })
-      }
-      break
-    }
-    default:
-      if (req.id !== undefined) {
-        respond(req.id, { error: { code: -32601, message: `Method not found: ${req.method}` } })
-      }
+/** Parse argv and dispatch to the stdio or HTTP transport. */
+export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+  let values: { http?: boolean; help?: boolean }
+  let positionals: string[]
+  try {
+    ;({ values, positionals } = parseArgs({
+      args: argv,
+      allowPositionals: true,
+      options: {
+        http: { type: 'boolean', default: false },
+        help: { type: 'boolean', short: 'h', default: false },
+      },
+    }))
+  } catch (err) {
+    console.error(String(err instanceof Error ? err.message : err))
+    console.error(USAGE)
+    process.exitCode = 1
+    return
   }
-}
 
-export function startServer(): void {
-  const rl = createInterface({ input: process.stdin, crlfDelay: Infinity })
-  rl.on('line', (line) => {
-    const trimmed = line.trim()
-    if (!trimmed) return
-    let req: JsonRpcRequest
-    try {
-      req = JSON.parse(trimmed) as JsonRpcRequest
-    } catch {
-      respond(null, { error: { code: -32700, message: 'Parse error' } })
-      return
-    }
-    void handle(req)
-  })
+  if (values.help) {
+    console.log(USAGE)
+    return
+  }
+
+  const command = positionals[0]
+  if (values.http || command === 'http') {
+    await startHttpServer()
+    return
+  }
+  if (command !== undefined) {
+    console.error(`Unknown command: ${command}`)
+    console.error(USAGE)
+    process.exitCode = 1
+    return
+  }
+
+  await startServer()
 }
 
 if (process.argv[1]?.endsWith('cli.ts') || process.argv[1]?.endsWith('cli.js')) {
-  startServer()
+  main().catch((err) => {
+    console.error(err)
+    process.exit(1)
+  })
 }

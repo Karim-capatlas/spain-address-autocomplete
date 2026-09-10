@@ -22,13 +22,17 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "test": "vitest run",
-    "start": "tsx src/cli.ts"
+    "start": "tsx src/cli.ts",
+    "start:http": "tsx src/cli.ts http"
   },
   "dependencies": {
+    "@hono/node-server": "^1.13.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@spain-address/core": "workspace:*"
+    "@spain-address/core": "workspace:*",
+    "hono": "^4.6.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "tsup": "^8.3.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0",
