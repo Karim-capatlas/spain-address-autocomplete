@@ -1,0 +1,10 @@
+[Unit]
+Description=spain-address auto-deploy (git pull + install + restart)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+WorkingDirectory=/home/deploy/spain-address-autocomplete
+ExecStart=/usr/bin/bash /home/deploy/spain-address-autocomplete/scripts/deploy.sh

@@ -1,0 +1,25 @@
+[Unit]
+Description=spain-address MCP server (Streamable HTTP)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+User=deploy
+WorkingDirectory=/home/deploy/spain-address-autocomplete
+Environment=TYPESENSE_HOST=127.0.0.1
+Environment=TYPESENSE_PORT=8108
+Environment=TYPESENSE_PROTOCOL=http
+Environment=TYPESENSE_API_KEY=xyz
+Environment=MCP_PORT=8789
+Environment=MCP_HOST=127.0.0.1
+# Exact `Host` values allowed by DNS-rebinding protection (public Tunnel host +
+# localhost for on-box smoke tests; include the port for localhost).
+Environment=MCP_ALLOWED_HOSTS=calle.alami.es,localhost,127.0.0.1,localhost:8789,127.0.0.1:8789
+# Optional shared secret — uncomment to require `Authorization: Bearer <token>`.
+# Environment=MCP_AUTH_TOKEN=change-me
+ExecStart=/usr/bin/pnpm --filter @spain-address/mcp start:http
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

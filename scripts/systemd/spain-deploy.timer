@@ -1,0 +1,13 @@
+[Unit]
+Description=Run spain-address auto-deploy every 2 minutes
+Requires=spain-deploy.service
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Unit=spain-deploy.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

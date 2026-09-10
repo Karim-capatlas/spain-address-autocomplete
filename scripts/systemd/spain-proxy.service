@@ -1,0 +1,19 @@
+[Unit]
+Description=spain-address search proxy (fuzzy street search)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+User=deploy
+WorkingDirectory=/home/deploy/spain-address-autocomplete
+Environment=TYPESENSE_HOST=127.0.0.1
+Environment=TYPESENSE_PORT=8108
+Environment=TYPESENSE_PROTOCOL=http
+Environment=TYPESENSE_API_KEY=xyz
+Environment=PORT=8787
+ExecStart=/usr/bin/pnpm --filter @spain-address/proxy start
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

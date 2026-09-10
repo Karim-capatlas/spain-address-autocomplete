@@ -310,6 +310,53 @@ curl localhost:8789/health         # → {"ok":true}
 
 ---
 
+## 7.5 Auto-deploy (push to `main` → live in ~2 min)
+
+Services run from the working tree via `pnpm --filter … start` (tsx — **no build
+step**), so a deploy is just: pull, install, restart. The repo ships both the
+tooling and the systemd units:
+
+| File | Purpose |
+|---|---|
+| `scripts/deploy.sh` | Idempotent deploy: `git fetch` → exit if already current → `git reset --hard origin/main` → `pnpm install --frozen-lockfile` → sync `scripts/systemd/*` → `pnpm typecheck` gate → restart services → health-check. Rolls back to the previous commit if install/typecheck fails and records the bad SHA so it does not loop. |
+| `scripts/systemd/spain-cascade.service` | Cascade unit (same as §7) |
+| `scripts/systemd/spain-proxy.service` | Proxy unit (same as §7) |
+| `scripts/systemd/spain-mcp.service` | MCP Streamable HTTP unit (`:8789`) |
+| `scripts/systemd/spain-deploy.{service,timer}` | Timer that runs the deploy script every 2 min |
+
+One-off bootstrap on the VPS:
+
+```bash
+cd ~/spain-address-autocomplete
+bash scripts/deploy.sh --force        # pull, install, sync units, restart, health-check
+sudo systemctl enable --now spain-deploy.timer
+systemctl list-timers spain-deploy.timer
+journalctl -u spain-deploy -f         # watch deploys
+```
+
+Thereafter **every push to `main` is live within ~2 minutes** — the timer runs
+`scripts/deploy.sh` on `OnBootSec=2min` / `OnUnitActiveSec=2min`, and the script
+exits immediately when the checkout already matches `origin/main` (no install, no
+restart). Manual controls:
+
+```bash
+bash scripts/deploy.sh               # deploy now if origin/main moved
+bash scripts/deploy.sh --force       # redeploy current main
+journalctl -u spain-deploy --since today
+```
+
+Caveats:
+- **Typesense data is never re-imported** by a code deploy — run
+  `pnpm typesense:import` / `pnpm cascade:import` manually on snapshot/schema
+  changes (biannual INE refresh).
+- A commit that fails the typecheck gate is skipped until a new commit lands (or
+  `--force`); the running services are left untouched.
+- This is **pull-based** (the VPS polls GitHub), so it needs no repository
+  secrets. Push-based/immediate deploys would instead use a GitHub Actions job
+  that `ssh`es in and runs `bash scripts/deploy.sh` with a deploy key — optional.
+
+---
+
 ## 8. HTTPS via Cloudflare Tunnel on calle.alami.es
 
 Uses a dashboard-managed (token) tunnel — no certs, no open ports, free. Because
@@ -344,6 +391,12 @@ systemctl status cloudflared --no-pager
    Rules evaluate top-down — the path rule must come first. The DNS record for
    `calle.alami.es` is created automatically, and TLS is covered by the existing
    universal `*.alami.es` certificate.
+
+   > **Ingress is dashboard-managed.** The tunnel runs from a token
+   > (`cloudflared tunnel run --token-file …`; there is no
+   > `/etc/cloudflared/config.yml`), so adding/changing the `/mcp` route is a
+   > **manual dashboard step** — it cannot be applied from the VPS or by
+   > `scripts/deploy.sh`. The service deploy is automated; this one route is not.
 
    > Note: `https://calle.alami.es/` with no path lands on the proxy and will
    > 404 — fine for an API-only hostname; the demo page lives on Pages.
