@@ -14,6 +14,7 @@
 
 import type { TypesenseClient, TypesenseSearchResponse } from './typesense.js'
 import { toAddressRecord } from './record.js'
+import { normalizeSearchQuery } from './via-tipos.js'
 import type { SearchCommand } from './redis.js'
 import type { Highlight, AddressRecord, SearchGroup, SearchOptions, SearchResult } from './types.js'
 
@@ -137,7 +138,7 @@ export async function searchAddressesTypesense(
   const collection = deps.collection ?? 'callejero_es'
   const client = deps.client as TypesenseClient
   const params: Record<string, string | number | boolean | undefined> = {
-    q: options.query,
+    q: normalizeSearchQuery(options.query),
     query_by: SEARCH_QUERY_BY,
     query_by_weights: SEARCH_QUERY_BY_WEIGHTS,
     per_page: options.perPage ?? 10,

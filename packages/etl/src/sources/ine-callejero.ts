@@ -141,11 +141,17 @@ export function formatMunicipioName(raw: string): string {
  */
 const VIA_TYPE_WORDS: Record<string, string> = {
   CALLE: '01',
+  C: '01',
   AVENIDA: '02',
   AVDA: '02',
   AVGDA: '02',
+  AV: '02',
+  AVD: '02',
   PLAZA: '03',
   PLZLA: '03',
+  PLZA: '03',
+  PZA: '03',
+  PL: '03',
   PASEO: '04',
   RONDA: '05',
   RNDA: '05',
@@ -154,23 +160,33 @@ const VIA_TYPE_WORDS: Record<string, string> = {
   TRAV: '06',
   TRVA: '06',
   CTRA: '07',
+  CRTA: '07',
+  CRA: '07',
   CARRE: '07',
   CARR: '07',
   CAMINO: '08',
   CMNO: '08',
+  CNO: '08',
   BULEV: '10',
   BULEVAR: '10',
   BLVD: '10',
   GLORIETA: '11',
   GLTA: '11',
+  GTA: '11',
   ALAMEDA: '16',
   ALAM: '16',
   AVIA: '19',
   BLOQUE: '23',
   BLQUE: '23',
   CÑADA: '24',
+  EDIF: '33',
   LUGAR: '44',
   PSAJE: '52',
+  PSJE: '52',
+  PJE: '52',
+  POL: '57',
+  PG: '57',
+  RBLA: '62',
   URBANIZACION: '76',
   URB: '76',
   URBN: '76',
@@ -187,15 +203,19 @@ function splitViaName(rawName: string): { code: string; name: string } | null {
   if (!nome) return null
 
   let code = '01'
-  // First all-caps token, but ONLY when followed by whitespace or end-of-string
-  // — so "CALLE MAYOR" -> type Calle, while "CAMINO-REGUERA" (compound name,
-  // no space after the word) is left intact.
-  const head = nome.match(/^([A-ZÑÁÉÍÓÚÜ]+)(?:\s+|$)/)
+  // First all-caps token, optionally followed by a conventional separator
+  // (`.` or `/`, e.g. "CTRA. VILLANUBLA", "C/ MAYOR"), and ONLY when followed
+  // by whitespace or end-of-string — so "CALLE MAYOR" -> type Calle, while
+  // "CAMINO-REGUERA" (compound name, no space after the word) is left intact.
+  const head = nome.match(/^([A-ZÑÁÉÍÓÚÜºª]+)(?:[./]\s*|\s+|$)/)
   if (head && head[1].length > 0) {
-    const mapped = VIA_TYPE_WORDS[head[1]]
-    if (mapped) {
+    const mapped = VIA_TYPE_WORDS[head[1].toUpperCase()]
+    const remainder = mapped ? nome.slice(head[0].length).trim() : ''
+    // Only strip when a real street name follows — this keeps a record whose
+    // whole raw name is the type token (e.g. the street literally named "C").
+    if (mapped && remainder) {
       code = mapped
-      nome = nome.slice(head[0].length).trim()
+      nome = remainder
     }
   }
 

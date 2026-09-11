@@ -16,6 +16,7 @@
 
 import type { AddressRecord, SearchGroup, SearchResult } from './types.js'
 import { toAddressRecord } from './record.js'
+import { normalizeSearchQuery } from './via-tipos.js'
 
 export const UPSTASH_INDEX = 'callejero_es'
 export const DEFAULT_PER_PAGE = 10
@@ -269,7 +270,10 @@ export async function searchAddressesUpstash(
   deps: UpstashSearchDeps,
 ): Promise<SearchResult> {
   const start = Date.now()
-  const args = buildSearchArgs(options, deps.index)
+  const args = buildSearchArgs(
+    { ...options, query: normalizeSearchQuery(options.query) },
+    deps.index,
+  )
   const reply = await deps.command(args)
   const parsed = parseSearchReply(reply)
   const records = parsed.records

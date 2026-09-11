@@ -54,6 +54,15 @@ describe('searchAddresses', () => {
     expect(captured.params?.per_page).toBe(10) // default
   })
 
+  test('normalizes the via-type abbreviation out of the query', async () => {
+    const captured: { params?: Record<string, string | number | boolean | undefined> } = {}
+    await searchAddresses(
+      { query: 'c/ Villanubla Valladolid' },
+      { client: fakeClient({ found: 0, hits: [] }, captured) },
+    )
+    expect(captured.params?.q).toBe('Calle Villanubla Valladolid')
+  })
+
   test('forwards perPage and default group_limit', async () => {
     const captured: { params?: Record<string, string | number | boolean | undefined> } = {}
     const result = await searchAddresses({ query: 'x', perPage: 7 }, {

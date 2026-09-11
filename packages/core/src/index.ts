@@ -29,6 +29,11 @@ export type {
 } from './domicilio.js'
 
 export {
+  normalizeSearchQuery,
+  VIA_TIPO_ABBREVIATIONS,
+} from './via-tipos.js'
+
+export {
   DEFAULT_TYPESENSE_CONFIG,
   TYPESENSE_COLLECTION,
   createTypesenseClient,

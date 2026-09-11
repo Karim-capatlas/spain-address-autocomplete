@@ -146,6 +146,13 @@ describe('parseTRAMLine — format + shape disambiguation', () => {
       ['CARRE SAN FRANCISCO (FTA)', '07', 'SAN FRANCISCO'],
       ['PLZLA OBRA (FTA)', '03', 'OBRA'],
       ['CÑADA REAL (CHA)', '24', 'REAL'],
+      // Conventional abbreviations, with trailing period/slash separators.
+      ['CTRA. VILLANUBLA (FTA)', '07', 'VILLANUBLA'],
+      ['AV. BURGOS (FTA)', '02', 'BURGOS'],
+      ['PL. ESPAÑA (FTA)', '03', 'ESPAÑA'],
+      ['C/ MAYOR (FTA)', '01', 'MAYOR'],
+      ['C/MAYOR (FTA)', '01', 'MAYOR'],
+      ['RBLA. CATALUNYA (FTA)', '62', 'CATALUNYA'],
     ]
     for (const [dpsvia, code, name] of cases) {
       const line = tramLine([
@@ -180,6 +187,22 @@ describe('parseTRAMLine — format + shape disambiguation', () => {
     const [r] = parseTRAMLine(line)
     expect(r.via_tipo_code).toBe('01')
     expect(r.via_nombre_raw).toBe('BARRO FOCOS') // full name preserved
+  })
+
+  it('keeps a street whose whole name is the type token (e.g. "C")', () => {
+    const line = tramLine([
+      CPRO('28'),
+      CMUN('079'),
+      CP('28001'),
+      FVAR(),
+      NENTSIC(''),
+      NNUCLEC(''),
+      NVIAC(''),
+      DPSVIA('C'),
+    ])
+    const [r] = parseTRAMLine(line)
+    expect(r.via_tipo_code).toBe('01')
+    expect(r.via_nombre_raw).toBe('C')
   })
 
   it('filters out a via whose name equals the record own municipio name', () => {
