@@ -20,7 +20,7 @@ addresses from Spanish identity cards in-browser and normalizes them via MCP.
 - **Data:** INE Callejero (`caj_esp_*.zip`) — 749,261 streets across 52 provinces, sourced from open government data
 - **Search:** **Typesense** (HTTP/REST, local `127.0.0.1:8108` dev / Upstash-hosted in prod) for street-level fuzzy address normalization; local `cascade_es` Typesense collection for the provincia→municipio→CP dropdown cascade — both derived from the same INE snapshot
 - **Current migration:** Typesense is the default backend; **Upstash Redis Search** is retained as an explicit opt-in (`USE_UPSTASH=1`); `packages/mcp/` wraps `searchAddresses()` as `normalize_address` + `search_addresses` tools over **stdio and Streamable HTTP**
-- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, **211** tests green (18 files), 749K docs indexed & searched. **Backend default is now Typesense** (`createSearchClient()` defaults to Typesense over HTTP/REST; Upstash Redis Search is retained as an explicit opt-in via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`). Local dev uses the Homebrew Typesense server (`127.0.0.1:8108`, key `xyz`); Upstash Cloud REST is unit-tested only (no creds locally, live verification via local Typesense) · **`packages/cascade/` ✅ done & live-verified** — standalone Hono server replacing the `geoapi.es` provincia→municipio→CP router, backed by a dedicated `cascade_es` Typesense collection (HTTP/REST) built from the same INE snapshot (52 provincias, 8,106 municipios, 10,127 CPs). The cascade BFF is HTTP-addressable so it can sit behind a Cloudflare Tunnel and be called by a Worker; the Widget topology section (Phase 4) has the details.
+- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, **223** tests green (19 files), 749K docs indexed & searched. **Backend default is now Typesense** (`createSearchClient()` defaults to Typesense over HTTP/REST; Upstash Redis Search is retained as an explicit opt-in via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`). Local dev uses the Homebrew Typesense server (`127.0.0.1:8108`, key `xyz`); Upstash Cloud REST is unit-tested only (no creds locally, live verification via local Typesense) · **`packages/cascade/` ✅ done & live-verified** — standalone Hono server replacing the `geoapi.es` provincia→municipio→CP router, backed by a dedicated `cascade_es` Typesense collection (HTTP/REST) built from the same INE snapshot (52 provincias, 8,106 municipios, 10,127 CPs). The cascade BFF is HTTP-addressable so it can sit behind a Cloudflare Tunnel and be called by a Worker; the Widget topology section (Phase 4) has the details.
 
 ## Toolchain status (GREEN — do not regress)
 
@@ -30,7 +30,7 @@ Verified end-to-end on this machine:
 pnpm typecheck   # 9/9 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
 pnpm lint        # 8/8 tasks, 0 errors
 pnpm build       # 9/9 tasks — widget + cascade included
-pnpm test        # 211 tests pass (18 files)
+pnpm test        # 223 tests pass (19 files)
 ```
 
 - Root `vitest.config.ts` (`include: packages/**/src/**/*.{test,spec}.*`, v8, thresholds 0.8)
@@ -79,6 +79,11 @@ have >250 municipios).
 - Generated from the **AEAT "Tabla de Tipos de Vías"** (333 rows / 204 codes / multilingual synonyms). Each code collapses to its Castilian/INE-canonical label, then curated overrides (`CODE_CANONICAL_OVERRIDES`) and everyday abbreviations/OCR typos (`EXTRA_VIA_TIPO_ALIASES`) are applied.
 - `normalizeSearchQuery` rewrites the longest leading type phrase (up to 4 words) to canonical (`c/ X`→`Calle X`, `PLZA.`→`Plaza`, `gran via`→`Gran Vía`, `PSMAR.`→`Paseo Marítimo`); `normalizeViaTipo` resolves a single abbreviation/name for filters (`PLZA.`→`Plaza`, `BARRO`→`Barrio`, `carretra`→`Carretera`).
 - Do **not** re-add a hand-rolled 90-entry map — regenerate from the AEAT table instead.
+
+**Smart locality auto-detection (`packages/core/src/locality.ts` + `provincias.ts`):**
+- `searchAddressesTypesense` (the widget's endpoint + direct modes, proxy, MCP, demo) runs `applyLocalityHints` first: when a free-text address ends with a known province (`PROVINCIAS`, 52 entries + aliases) and looks like an address (contains a digit/comma or ≥3 tokens), it resolves the trailing municipio against the province's municipios (`query_by=municipio`, `filter_by=provincia_id:=…`) and adds `filterByProvincia`/`filterByMunicipio`. The query text is left intact — the filters are what disambiguate.
+- This is what makes a raw DNI line resolve with **no** caller hints: `PLZA. DE LAS AUTONOMIAS 13 P05 C TORRELAVEGA, CANTABRIA` → `Calle Autonomias (las), Torrelavega (39300)`. Best-effort: a failed lookup never fails the search; city-provinces (`Gran Vía 12 Madrid`) fall back to the province name as the municipio.
+- Typesense path only (the Upstash path has no municipio-name facet).
 
 **`MCP server (`packages/mcp/`):**
 - **Two transports, one tool source** — official `@modelcontextprotocol/sdk`
@@ -385,7 +390,7 @@ pnpm install
 pnpm typecheck      # 9/9
 pnpm lint           # 0 errors
 pnpm build          # 9/9
-pnpm test           # 211 tests (18 files)
+pnpm test           # 223 tests (19 files)
 
 # ETL
 pnpm exec tsx packages/etl/src/index.ts run   --year 2026 --month 1 --provinces 28 \

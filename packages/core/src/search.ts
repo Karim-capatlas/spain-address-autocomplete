@@ -15,6 +15,7 @@
 import type { TypesenseClient, TypesenseSearchResponse } from './typesense.js'
 import { toAddressRecord } from './record.js'
 import { normalizeSearchQuery, normalizeViaTipo } from './via-tipos.js'
+import { applyLocalityHints } from './locality.js'
 import type { SearchCommand } from './redis.js'
 import type { Highlight, AddressRecord, SearchGroup, SearchOptions, SearchResult } from './types.js'
 
@@ -164,6 +165,9 @@ export async function searchAddressesTypesense(
 ): Promise<SearchResult> {
   const collection = deps.collection ?? 'callejero_es'
   const client = deps.client as TypesenseClient
+  // Smart autocomplete: recognise a trailing municipio/provincia in a free-text
+  // address (e.g. a DNI line) and constrain the search to it before ranking.
+  const effective = await applyLocalityHints(options, client, collection)
   const params: Record<string, string | number | boolean | undefined> = {
     q: normalizeSearchQuery(options.query),
     query_by: SEARCH_QUERY_BY,
@@ -174,7 +178,7 @@ export async function searchAddressesTypesense(
     sort: '_text_match:desc',
     prefix: true,
     num_typos: 1,
-    filter_by: buildFilter(options),
+    filter_by: buildFilter(effective),
     // §3.1.7: opt-in matched-token highlighting. The live Typesense server returns
     // `<mark>`-wrapped snippets by default (it ignores a custom `highlight_affix`),
     // so the widget renders the default markup directly.

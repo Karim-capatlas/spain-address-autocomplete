@@ -35,6 +35,17 @@ export {
   VIA_TIPO_ABBREVIATIONS,
 } from './via-tipos.js'
 
+export { applyLocalityHints } from './locality.js'
+
+export {
+  PROVINCIAS,
+  findProvincia,
+  findProvinciaSuffix,
+  normalizeName,
+} from './provincias.js'
+
+export type { ProvinciaInfo, ProvinciaSuffix } from './provincias.js'
+
 export {
   DEFAULT_TYPESENSE_CONFIG,
   TYPESENSE_COLLECTION,

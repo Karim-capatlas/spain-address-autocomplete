@@ -19,7 +19,7 @@ MCP Streamable HTTP en `/mcp` `:8789`).
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
 ![Node 22](https://img.shields.io/badge/Node-22-339933)
 ![MCP](https://img.shields.io/badge/protocol-MCP%20stdio%20%2B%20HTTP-blueviolet)
-![Tests](https://img.shields.io/badge/tests-211%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-223%20passing-brightgreen)
 ![Live demo](https://img.shields.io/badge/demo-calle.alami.es-33cc77)
 
 > Aún no hay GIF — ejecuta `curl "https://calle.alami.es/api/address-search?q=gran%20via"` y verás 131 coincidencias para `Calle Gran Vía, …` en toda España. Esa es toda la funcionalidad en una sola petición.
@@ -58,9 +58,11 @@ dígitos se detecta automáticamente como código postal, y la búsqueda difusa
 `{ query, unidad, total, groups }`. Los filtros de ubicación aceptan **nombres o
 códigos INE** (`provincia=Cantabria` o `39`, `municipio=Torrelavega` o `39087`) y
 `via_tipo` se canonicaliza desde cualquier abreviatura (`plza`→`Plaza`,
-`ctra`→`Carretera`). Con el municipio ya conocido por el OCR, una dirección de
-DNI como `PLZA. DE LAS AUTONOMIAS 13 P05 C TORRELAVEGA, CANTABRIA` resuelve a
-`Calle Autonomias (las) · Torrelavega · 39300 · Cantabria`.
+`ctra`→`Carretera`). Además, el autocompletado **detecta la localidad por sí
+solo**: reconoce una provincia al final del texto y resuelve el municipio contra
+el propio índice, así que una dirección de DNI escrita tal cual
+(`PLZA. DE LAS AUTONOMIAS 13 P05 C TORRELAVEGA, CANTABRIA`) resuelve sin ninguna
+pista a `Calle Autonomias (las) · Torrelavega · 39300 · Cantabria`.
 
 ## Por qué existe
 
@@ -86,7 +88,7 @@ DNI como `PLZA. DE LAS AUTONOMIAS 13 P05 C TORRELAVEGA, CANTABRIA` resuelve a
 | Verificación en vivo: `"Gran Vía"` (nacional) | 131 coincidencias |
 | Verificación en vivo: CP `28013` + `"mayor"` | exactamente 1 — `Calle Mayor, Madrid` |
 | Demo en vivo | https://calle.alami.es (Typesense + túnel Cloudflare) |
-| Tests | 211 (18 archivos) |
+| Tests | 223 (19 archivos) |
 | Toolchain | typecheck 9/9 · lint 0 errores · build 9/9 |
 
 ## Arquitectura
@@ -231,7 +233,7 @@ Configuración de Cursor y esquemas completas de herramientas: [packages/mcp/REA
 pnpm typecheck   # 9/9 paquetes
 pnpm lint        # 0 errores
 pnpm build        # 9/9 paquetes
-pnpm test         # 211 tests (18 archivos)
+pnpm test         # 223 tests (19 archivos)
 pnpm test:e2e     # Playwright (widget)
 ```
 
