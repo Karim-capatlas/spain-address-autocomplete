@@ -16,16 +16,7 @@
  * Stencil compiler constraints (AGENTS.md Phase 3): `h` from the non-public
  * internal/client subpath; cross-package types via inline `import()`.
  */
-import {
-  Component,
-  Prop,
-  State,
-  Event,
-  EventEmitter,
-  Element,
-  Method,
-  Watch,
-} from '@stencil/core'
+import { Component, Prop, State, Event, EventEmitter, Element, Method, Watch } from '@stencil/core'
 /* eslint-disable @typescript-eslint/no-unused-vars -- `h` is the JSX factory (jsxFactory); consumed by the JSX→h() emit */
 // @ts-expect-error -- no public .d.ts; global.d.ts declares a loose `h` + permissive JSX
 import { h } from '@stencil/core/internal/client'
@@ -137,8 +128,8 @@ export class AddressCascadeEs {
   @Prop({ reflect: true }) typesensePort = 8108
   @Prop({ reflect: true }) typesenseApiKey = ''
   @Prop({ reflect: true }) typesenseProtocol: 'http' | 'https' = 'http'
-  /** Control size — MUI Joy Input metrics. Default `sm` (32px / 0.875rem). */
-  @Prop({ reflect: true }) size: 'sm' | 'md' | 'lg' = 'sm'
+  /** Control size — MUI Joy Input metrics. Default `md` (32px / 0.875rem). */
+  @Prop({ reflect: true }) size: 'sm' | 'md' | 'lg' = 'md'
   /** Footer "Powered by" backlink href. */
   @Prop({ reflect: true }) poweredByHref = 'https://calle.alami.es'
   /** Footer "Powered by" backlink label. */
@@ -323,15 +314,33 @@ export class AddressCascadeEs {
 
   /* ===== typo-tolerant option matching ===== */
   private provinciaMatches(): GeoOption[] {
-    return fuzzyMatch(this.provinciaQuery, this.provincias, (o) => o.name, (o) => o.code, GEO_LIMIT)
+    return fuzzyMatch(
+      this.provinciaQuery,
+      this.provincias,
+      (o) => o.name,
+      (o) => o.code,
+      GEO_LIMIT
+    )
   }
 
   private municipioMatches(): GeoOption[] {
-    return fuzzyMatch(this.municipioQuery, this.municipios, (o) => o.name, (o) => o.code, GEO_LIMIT)
+    return fuzzyMatch(
+      this.municipioQuery,
+      this.municipios,
+      (o) => o.name,
+      (o) => o.code,
+      GEO_LIMIT
+    )
   }
 
   private cpMatches(): string[] {
-    return fuzzyMatch(this.cpQuery, this.cps, (c) => c, (c) => c, GEO_LIMIT)
+    return fuzzyMatch(
+      this.cpQuery,
+      this.cps,
+      (c) => c,
+      (c) => c,
+      GEO_LIMIT
+    )
   }
 
   /* ===== reset helpers (downstream cascade semantics) ===== */
@@ -429,7 +438,12 @@ export class AddressCascadeEs {
   }
 
   private onStreetFocus = (): void => {
-    if (this.streetQuery.trim().length >= 2 || this.streetGroups.length) this.streetOpen = true
+    // Reopen only when there is something to show. After picking a street the
+    // input holds the label and `streetGroups` is empty — reopening then would
+    // render the "no streets" row for the selected label.
+    if (this.streetGroups.length || (!this.streetSelected && this.streetQuery.trim().length >= 2)) {
+      this.streetOpen = true
+    }
   }
 
   private onStreetBlur = (): void => {
@@ -467,6 +481,11 @@ export class AddressCascadeEs {
   }
 
   private selectStreet(item: AddressRecord): void {
+    // Cancel any pending debounce/in-flight search so a late response cannot
+    // reopen the menu with results for the text the user just replaced.
+    if (this.debounceHandle) clearTimeout(this.debounceHandle)
+    this.controller.cancel()
+    this.streetLoading = false
     this.addressSelected.emit(item)
     this.streetSelected = item
     this.streetQuery = item.label ?? ''
@@ -668,7 +687,7 @@ export class AddressCascadeEs {
     focused: number,
     setFocused: (n: number) => void,
     select: (idx: number) => void,
-    close: () => void,
+    close: () => void
   ): void {
     if (!open || count === 0) {
       if (e.key === 'Escape') close()
@@ -696,9 +715,11 @@ export class AddressCascadeEs {
       this.provinciaOpen,
       opts.length,
       this.provinciaFocused,
-      (n) => { this.provinciaFocused = n },
+      (n) => {
+        this.provinciaFocused = n
+      },
       (i) => this.selectProvincia(opts[i]),
-      () => this.closeProvincia(),
+      () => this.closeProvincia()
     )
   }
 
@@ -709,9 +730,11 @@ export class AddressCascadeEs {
       this.municipioOpen,
       opts.length,
       this.municipioFocused,
-      (n) => { this.municipioFocused = n },
+      (n) => {
+        this.municipioFocused = n
+      },
       (i) => this.selectMunicipio(opts[i]),
-      () => this.closeMunicipio(),
+      () => this.closeMunicipio()
     )
   }
 
@@ -722,9 +745,11 @@ export class AddressCascadeEs {
       this.cpOpen,
       opts.length,
       this.cpFocused,
-      (n) => { this.cpFocused = n },
+      (n) => {
+        this.cpFocused = n
+      },
       (i) => this.selectCp(opts[i]),
-      () => this.closeCp(),
+      () => this.closeCp()
     )
   }
 
@@ -799,18 +824,29 @@ export class AddressCascadeEs {
             />
             <div class="aes-trailing">
               {cfg.committed && !cfg.loading ? (
-                <span class="aes-check" aria-hidden="true">{iconCheck()}</span>
+                <span class="aes-check" aria-hidden="true">
+                  {iconCheck()}
+                </span>
               ) : null}
               {cfg.loading ? <span class="aes-spinner" aria-hidden="true" /> : null}
               {cfg.query ? (
-                <button class="aes-clear" aria-label={cfg.clearLabel} type="button" onClick={cfg.onClear}>
+                <button
+                  class="aes-clear"
+                  aria-label={cfg.clearLabel}
+                  type="button"
+                  onClick={cfg.onClear}
+                >
                   {iconClear()}
                 </button>
               ) : null}
             </div>
           </div>
           {cfg.open && cfg.options.length > 0 ? (
-            <div class="aes-menu" aria-hidden={!cfg.open} onMouseDown={(e: MouseEvent) => e.preventDefault()}>
+            <div
+              class="aes-menu"
+              aria-hidden={!cfg.open}
+              onMouseDown={(e: MouseEvent) => e.preventDefault()}
+            >
               <div class="aes-listbox" id={cfg.listboxId} role="listbox" aria-label={cfg.label}>
                 {cfg.options.map((opt, idx) => (
                   <div
@@ -828,7 +864,11 @@ export class AddressCascadeEs {
             </div>
           ) : null}
         </div>
-        {cfg.error ? <span class="ace-field-error" role="alert">{cfg.error}</span> : null}
+        {cfg.error ? (
+          <span class="ace-field-error" role="alert">
+            {cfg.error}
+          </span>
+        ) : null}
       </div>
     )
   }
@@ -863,7 +903,10 @@ export class AddressCascadeEs {
           inputRef: (el: HTMLInputElement | undefined) => (this.provinciaInput = el),
           onInput: this.onProvinciaInput,
           onKeyDown: this.onProvinciaKeyDown,
-          onFocus: () => { this.provinciaOpen = true; this.provinciaFocused = -1 },
+          onFocus: () => {
+            this.provinciaOpen = true
+            this.provinciaFocused = -1
+          },
           onBlur: () => setTimeout(() => this.closeProvincia(), 200),
           onClear: this.onProvinciaClear,
           onSelectKey: this.onSelectProvinciaKey,
@@ -887,7 +930,10 @@ export class AddressCascadeEs {
           inputRef: (el: HTMLInputElement | undefined) => (this.municipioInput = el),
           onInput: this.onMunicipioInput,
           onKeyDown: this.onMunicipioKeyDown,
-          onFocus: () => { this.municipioOpen = true; this.municipioFocused = -1 },
+          onFocus: () => {
+            this.municipioOpen = true
+            this.municipioFocused = -1
+          },
           onBlur: () => setTimeout(() => this.closeMunicipio(), 200),
           onClear: this.onMunicipioClear,
           onSelectKey: this.onSelectMunicipioKey,
@@ -911,7 +957,10 @@ export class AddressCascadeEs {
           inputRef: (el: HTMLInputElement | undefined) => (this.cpInput = el),
           onInput: this.onCpInput,
           onKeyDown: this.onCpKeyDown,
-          onFocus: () => { this.cpOpen = true; this.cpFocused = -1 },
+          onFocus: () => {
+            this.cpOpen = true
+            this.cpFocused = -1
+          },
           onBlur: () => setTimeout(() => this.closeCp(), 200),
           onClear: this.onCpClear,
           onSelectKey: this.onSelectCpKey,
@@ -980,28 +1029,23 @@ export class AddressCascadeEs {
                   </button>
                 </div>
               ) : (
-                <div
-                  class="aes-listbox"
-                  id="ace-listbox"
-                  role="listbox"
-                  aria-label="Calles"
-                >
-                  {this.streetLoading && this.streetGroups.length === 0
-                    ? this.renderSkeleton()
-                    : this.streetGroups.length === 0 && this.streetOpen
-                      ? this.streetQuery.trim()
-                        ? (
-                          <div class="aes-empty" role="presentation">
-                            No se encontraron calles para <b>{this.streetQuery.trim()}</b>.
-                          </div>
-                        )
-                        : null
-                      : renderOptionGroups(
-                          this.streetGroups,
-                          this.streetFocused,
-                          (it) => this.selectStreet(it),
-                          'ace',
-                        )}
+                <div class="aes-listbox" id="ace-listbox" role="listbox" aria-label="Calles">
+                  {this.streetLoading && this.streetGroups.length === 0 ? (
+                    this.renderSkeleton()
+                  ) : this.streetGroups.length === 0 && this.streetOpen && !this.streetSelected ? (
+                    this.streetQuery.trim() ? (
+                      <div class="aes-empty" role="presentation">
+                        No se encontraron calles para <b>{this.streetQuery.trim()}</b>.
+                      </div>
+                    ) : null
+                  ) : (
+                    renderOptionGroups(
+                      this.streetGroups,
+                      this.streetFocused,
+                      (it) => this.selectStreet(it),
+                      'ace'
+                    )
+                  )}
                 </div>
               )}
 
@@ -1013,12 +1057,7 @@ export class AddressCascadeEs {
                       : `${this.streetTotal} resultado${this.streetTotal === 1 ? '' : 's'}`}
                   </span>
                   <span class="aes-footer-right">
-                    <a
-                      class="aes-powered"
-                      href={this.poweredByHref}
-                      target="_blank"
-                      rel="noopener"
-                    >
+                    <a class="aes-powered" href={this.poweredByHref} target="_blank" rel="noopener">
                       Powered by {this.poweredByLabel}
                     </a>
                     <span class="aes-ine">Datos © INE</span>

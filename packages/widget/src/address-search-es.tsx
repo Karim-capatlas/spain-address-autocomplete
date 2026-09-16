@@ -6,19 +6,11 @@
  * typed React / Vue / Angular wrappers from this single component.
  *
  * v2 redesign: first-class combobox — selection fills the input, optional inline
- * structured address card (`detail`), three sizes (`size`, default Joy *small*),
+ * structured address card (`detail`), three sizes (`size`, default Joy *medium*),
  * sticky non-interactive group labels, error row with retry, and a footer
  * "Powered by" backlink + "Datos © INE" attribution (replaces "Ver todo").
  */
-import {
-  Component,
-  Prop,
-  State,
-  Event,
-  EventEmitter,
-  Element,
-  Method,
-} from '@stencil/core'
+import { Component, Prop, State, Event, EventEmitter, Element, Method } from '@stencil/core'
 // `h` is the JSX factory; the sandbox compiler's `syntheticRender` h-injection is
 // dormant, so we import it from the non-public `@stencil/core/internal/client`
 // subpath — rollup inlines+renames the real factory and links render() to it.
@@ -87,8 +79,8 @@ export class AddressSearchEs {
   @Prop({ reflect: true }) groupLimit = 3
   /** Input debounce in ms before issuing a search. */
   @Prop({ reflect: true }) debounceMs = 250
-  /** Control size — MUI Joy Input metrics. Default `sm` (32px / 0.875rem). */
-  @Prop({ reflect: true }) size: 'sm' | 'md' | 'lg' = 'sm'
+  /** Control size — MUI Joy Input metrics. Default `md` (32px / 0.875rem). */
+  @Prop({ reflect: true }) size: 'sm' | 'md' | 'lg' = 'md'
   /**
    * How the accepted selection is surfaced:
    *  - `none` (default): the selected label fills the input, inline ✓ only;
@@ -194,7 +186,10 @@ export class AddressSearchEs {
   }
 
   private onFocus = (): void => {
-    if (this.query.trim().length >= 2 || this.groups.length) this.open = true
+    // Reopen only when there is something to show. After a selection the input
+    // holds the label and `groups` is empty — reopening then would render the
+    // "no results" row for the selected label.
+    if (this.groups.length || (!this.selected && this.query.trim().length >= 2)) this.open = true
   }
 
   private onBlur = (): void => {
@@ -267,7 +262,7 @@ export class AddressSearchEs {
   async setSelection(record: AddressRecord | null): Promise<void> {
     this.selected = record
     this.unidad = null
-    this.query = record ? record.label ?? '' : ''
+    this.query = record ? (record.label ?? '') : ''
     this.clearResults()
     this.open = false
     this.focused = -1
@@ -299,15 +294,18 @@ export class AddressSearchEs {
 
   private selectItem(item: AddressRecord): void {
     const typed = this.query
+    // Cancel any pending debounce/in-flight search so a late response cannot
+    // reopen the menu with results for the text the user just replaced.
+    if (this.debounceHandle) clearTimeout(this.debounceHandle)
+    this.controller.cancel()
+    this.loading = false
     this.addressSelected.emit(item)
     this.selected = item
     // Parse the unit ("datos del domicilio") out of the typed query and merge it
     // onto the matched street record — input-side only, never indexed.
     const { unidad, heuristic } = parseDomicilio(typed)
     this.unidad = unidad
-    this.addressNormalized.emit(
-      merge(item, unidad, heuristic ? 'parcial' : 'exact'),
-    )
+    this.addressNormalized.emit(merge(item, unidad, heuristic ? 'parcial' : 'exact'))
     // Selection fills the input with the label (consistent with `setSelection`).
     this.query = item.label ?? ''
     this.clearResults()
@@ -438,17 +436,17 @@ export class AddressSearchEs {
               role="listbox"
               aria-label="Resultados de dirección"
             >
-              {this.loading && count === 0
-                ? this.renderSkeleton()
-                : count === 0 && this.open
-                  ? this.query.trim()
-                    ? (
-                      <div class="aes-empty" role="presentation">
-                        No se encontraron resultados para <b>{this.query.trim()}</b>.
-                      </div>
-                    )
-                    : null
-                  : renderOptionGroups(this.groups, this.focused, (it) => this.selectItem(it), 'aes')}
+              {this.loading && count === 0 ? (
+                this.renderSkeleton()
+              ) : count === 0 && this.open && !this.selected ? (
+                this.query.trim() ? (
+                  <div class="aes-empty" role="presentation">
+                    No se encontraron resultados para <b>{this.query.trim()}</b>.
+                  </div>
+                ) : null
+              ) : (
+                renderOptionGroups(this.groups, this.focused, (it) => this.selectItem(it), 'aes')
+              )}
             </div>
           )}
 
@@ -461,12 +459,7 @@ export class AddressSearchEs {
                 {cpMode ? ' (CP)' : ''}
               </span>
               <span class="aes-footer-right">
-                <a
-                  class="aes-powered"
-                  href={this.poweredByHref}
-                  target="_blank"
-                  rel="noopener"
-                >
+                <a class="aes-powered" href={this.poweredByHref} target="_blank" rel="noopener">
                   Powered by {this.poweredByLabel}
                 </a>
                 <span class="aes-ine">Datos © INE</span>
