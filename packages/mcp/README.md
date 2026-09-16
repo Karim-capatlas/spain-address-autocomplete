@@ -56,6 +56,13 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
 - **5-digit postal-code auto-detection** — a numeric `28013` query routes to the
   CP filter; `normalize_address` strips house numbers (`C/ Mayor 12 3ºB` →
   `Calle Mayor`).
+- **Location filters by name or code** — `provincia_id` / `municipio_id` accept an
+  INE code (`28`, `28079`) **or** a name (`Cantabria`, `Torrelavega`); Typesense
+  string filters are case- and accent-insensitive. A `via_tipo` filter is
+  canonicalized from any abbreviation/synonym (`plza`→`Plaza`, `ctra`→`Carretera`)
+  through the AEAT vía-type dictionary (`via-tipos-data.ts`, 204 codes). Knowing
+  the municipio is what lets an OCR'd DNI address like
+  `PLZA. DE LAS AUTONOMIAS 13 P05 C TORRELAVEGA, CANTABRIA` resolve.
 - **Backend-agnostic dispatch** — `createSearchClient()` defaults to a **Typesense**
   server (the HTTP/REST backend reachable by Workers/cloud) and only opts into
   **Upstash Redis Search** when `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL` are set.
@@ -81,7 +88,8 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
   "name": "normalize_address",
   "arguments": {
     "text": "C/ Gran via 12, 28013 Madrid",   // ← noisy OCR text
-    "provincia_id": "28"                     // ← optional 2-digit INE province code
+    "provincia_id": "28",                    // ← optional: INE code or province name ("Madrid", "Cantabria")
+    "municipio_id": "28079"                  // ← optional: INE code or municipio name ("Torrelavega")
   }
 }
 
@@ -110,9 +118,10 @@ It is the address-normalization component of a larger DNI/TIE OCR pipeline
   "arguments": {
     "query": "C/ Mayor 12 3ºB, 28013",  // ← número/piso/puerta parsed into `unidad`
     "per_page": 10,             // ← optional, default 10
-    "provincia_id": "28",       // ← optional INE province filter
-    "municipio_id": "28079",    // ← optional 5-digit INE municipality filter
-    "codigo_postal": "28013"    // ← optional 5-digit postal-code filter (wins over a CP in `query`)
+    "provincia_id": "28",       // ← optional: INE code or province name ("Cantabria")
+    "municipio_id": "28079",    // ← optional: INE code or municipio name ("Torrelavega")
+    "codigo_postal": "28013",   // ← optional 5-digit postal-code filter (wins over a CP in `query`)
+    "via_tipo": "Plaza"         // ← optional vía type; any abbreviation/synonym ("plza", "ctra") is canonicalized
   }
 }
 
@@ -315,8 +324,8 @@ environment at startup:
 1. **House-number strip** — a regex drops `/^\d+º?ª?\s*/`-style trailing tokens
    so `C/ Mayor 12 3ºB` matches `Calle Mayor`.
 2. **Search** — queries `via_nombre, via_nombre_completo, municipio, provincia`
-   (Upstash weights `5.0 / 3.0 / 1.0 / 1.0`) with `$fuzzy`/`$smart` term
-   expansion for OCR typos; optionally narrowed by `provincia_id`.
+   with weighted term expansion for OCR typos; optionally narrowed by
+   `provincia_id`/`municipio_id` (each an INE code **or** a name) and `via_tipo`.
 3. **Project** — the top hit is shaped into the normalized `AddressRecord` subset
    the OCR pipeline consumes (`confidence: "exact"` is a placeholder for a future
    scoring layer).
@@ -393,6 +402,9 @@ Read [`AGENTS.md`](../../AGENTS.md) for the full phase history and design notes.
 - **Instituto Geográfico Nacional de España (IGN)** — CartoCiudad coordinate
   enrichment (CC BY 4.0). Credit "© Instituto Geográfico Nacional de España"
   where coordinates are surfaced.
+- **Agencia Estatal de Administración Tributaria (AEAT)** — vía-type table
+  ("Tabla de Tipos de Vías") backing the `via_tipo` dictionary, © AEAT
+  (public-sector information, Ley 37/2007).
 
 ## License
 

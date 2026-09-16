@@ -114,7 +114,7 @@ client-side. An **MCP server** provides the ideal bridge:
 - **Phase 2** — Typesense schema (`callejero_es`) + ingestion + `searchAddresses()` in `packages/core`
 - **Phase 3** — Stencil widget + React wrapper (`packages/widget`)
 - **Phase 3.5** — `packages/mcp` (MCP server over **stdio + Streamable HTTP** with `normalize_address` / `search_addresses`), `packages/upstash` (opt-in Redis Search schema/client/import CLI), `packages/cascade` (Typesense HTTP store), `packages/proxy` (CORS-enabled BFF). `core`'s `createSearchClient()` **defaults to Typesense**; Upstash is opt-in.
-- **Phase 3.5 (live verification)** — 749,261 docs indexed into local Typesense (`typesense/typesense:30.2`) in ~5–7 min on 2 vCores; searches verified against the street index ("Gran Vía" → **131** national hits; CP-28013 + "mayor" → exactly `Calle Mayor, Madrid`). Toolchain: typecheck 9/9 · lint 0 errors · build 9/9 · **190 tests pass (17 files)**
+- **Phase 3.5 (live verification)** — 749,261 docs indexed into local Typesense (`typesense/typesense:30.2`) in ~5–7 min on 2 vCores; searches verified against the street index ("Gran Vía" → **131** national hits; CP-28013 + "mayor" → exactly `Calle Mayor, Madrid`). Toolchain: typecheck 9/9 · lint 0 errors · build 9/9 · **211 tests pass (18 files)**
 - **Cascade server (live-verified, on `calle.alami.es`)** — `packages/cascade/` Hono app replaces the
   external `geoapi.es` router for the provincia→municipio→CP form dropdown, backed by the
   `cascade_es` Typesense collection: **52 provincias, 8,106 municipios, 10,127 CPs** derived
@@ -135,11 +135,11 @@ client-side. An **MCP server** provides the ideal bridge:
 |---|---|---|
 | `id` | string | Typesense document id |
 | `via_nombre` | string | Title-cased street name (primary search) |
-| `via_tipo` | string | "Calle", "Avenida", "Paseo", etc. |
+| `via_tipo` | string | "Calle", "Avenida", "Paseo", etc. Canonicalized from any abbreviation/synonym via the AEAT vía-type dictionary (`plza`→"Plaza", `baro`→"Barrio") |
 | `via_nombre_completo` | string | Full name: "Calle Gran Vía" |
-| `municipio` | string | "Madrid", "Barcelona", etc. |
+| `municipio` | string | "Madrid", "Barcelona", etc. `filterByMunicipio` accepts the name directly (case/accent-insensitive) |
 | `municipio_id` | string | INE code: CPRO+CMUN (e.g. "28079") |
-| `provincia` | string | "Madrid", "Barcelona", etc. |
+| `provincia` | string | "Madrid", "Barcelona", etc. `filterByProvincia` accepts the name directly |
 | `provincia_id` | string | INE province code (e.g. "28") |
 | `codigo_postal` | string | 5-digit postal code |
 | `label` | string | Display: "Calle Gran Vía, Madrid (28013)" |
@@ -168,6 +168,7 @@ client-side. An **MCP server** provides the ideal bridge:
 - [x] `packages/upstash/` opt-in: `FT.CREATE` schema (TEXT weights 5/3/1/1 + TAG filters), REST client + import CLI
 - [x] `packages/cascade/` ported off redis-stack to a Typesense HTTP store (Worker-reachable), composite `type:code` ids, internal 250-doc pagination
 - [x] `core`'s `createSearchClient()` defaults to Typesense; Upstash only when `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`TOKEN`
+- [x] Location filters accept **names or INE codes** (`filterByProvincia`/`filterByMunicipio`) and a canonicalized `filterByViaTipo`; vía-type dictionary generated from the **AEAT "Tabla de Tipos de Vías"** (204 codes / 333 rows) so DNI addresses resolve once the OCR supplies the municipio (`PLZA. DE LAS AUTONOMIAS 13 P05 C TORRELAVEGA, CANTABRIA` → `Calle Autonomias (las) · Torrelavega · 39300`)
 - [x] Live-verified on `calle.alami.es`: 749,261 street docs searchable ("Gran Vía"→131), 18,285 cascade docs (52/8,106/10,127)
 - [ ] Optional: real Upstash Cloud e2e test (upstash path is unit-tested only; no cloud creds in this repo)
 - [ ] Optional: improve multi-word OCR recall (OR'd fuzzy terms or prefix operators)
@@ -231,7 +232,7 @@ pnpm install --frozen-lockfile
 
 # Verify (Phase 0–3.5 — all green)
 pnpm typecheck    # 9 packages, green
-pnpm test         # 190 tests (17 files), passing
+pnpm test         # 211 tests (18 files), passing
 pnpm build        # 9 packages, builds
 
 # 2. Generate the INE dataset (snapshot is not committed)
@@ -261,6 +262,7 @@ pnpm --filter @spain-address/cascade start   # → localhost:5978/api/geo/provin
 
 - **INE Callejero** — © Instituto Nacional de Estadística (INE). Source: `ine.es/prodyser/callejero/`
 - **INE Municipios (UP)** — © Instituto Nacional de Estadística (INE)
+- **AEAT "Tabla de Tipos de Vías"** — © Agencia Estatal de Administración Tributaria (vía-type dictionary)
 - **CNIG CartoCiudad** — © Instituto Geográfico Nacional de España (CC BY 4.0)
 
 ---

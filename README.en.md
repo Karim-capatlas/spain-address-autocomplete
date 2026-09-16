@@ -15,7 +15,7 @@ MCP Streamable HTTP at `/mcp` `:8789`).
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
 ![Node 22](https://img.shields.io/badge/Node-22-339933)
 ![MCP](https://img.shields.io/badge/protocol-MCP%20stdio%20%2B%20HTTP-blueviolet)
-![Tests](https://img.shields.io/badge/tests-190%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-211%20passing-brightgreen)
 ![Live demo](https://img.shields.io/badge/demo-calle.alami.es-33cc77)
 
 _This README is also available in [español](./README.md)._)
@@ -50,7 +50,13 @@ The house number and unit (`número`, `piso`, `puerta`, `portal`, `bloque`,
 returned in the response (the INE index has no portal numbers). A 5-digit input is
 auto-detected as a postal code, and fuzzy matching (Levenshtein 1–2) tolerates OCR
 typos like `Grn Via` or `2801A`. `search_addresses` does the same: it accepts a
-full address and returns `{ query, unidad, total, groups }`.
+full address and returns `{ query, unidad, total, groups }`. Location filters
+accept **names or INE codes** (`provincia=Cantabria` or `39`,
+`municipio=Torrelavega` or `39087`), and `via_tipo` is canonicalized from any
+abbreviation (`plza`→`Plaza`, `ctra`→`Carretera`). Given the municipio the OCR
+already knows, a DNI address like `PLZA. DE LAS AUTONOMIAS 13 P05 C
+TORRELAVEGA, CANTABRIA` resolves to `Calle Autonomias (las) · Torrelavega ·
+39300 · Cantabria`.
 
 ## Why it exists
 
@@ -69,7 +75,7 @@ full address and returns `{ query, unidad, total, groups }`.
 | Live check: `"Gran Vía"` (national) | 131 hits |
 | Live check: CP `28013` + `"mayor"` | exactly 1 hit — `Calle Mayor, Madrid` |
 | Live demo | https://calle.alami.es (Typesense + Cloudflare Tunnel) |
-| Tests | 190 unit (17 files) |
+| Tests | 211 unit (18 files) |
 | Toolchain | typecheck 9/9 · lint 0 errors · build 9/9 |
 
 ## Architecture
@@ -197,7 +203,7 @@ Cursor config and full tool schemas: [packages/mcp/README.md](./packages/mcp/REA
 pnpm typecheck   # 9/9 packages
 pnpm lint        # 0 errors
 pnpm build        # 9/9 packages
-pnpm test         # 190 tests (17 files)
+pnpm test         # 211 tests (18 files)
 pnpm test:e2e     # Playwright (widget)
 ```
 
@@ -216,6 +222,7 @@ Typesense (store). Upstash Redis Search is retained as an **opt-in** backend
 ## Data attribution
 
 - **INE Callejero / Municipios (UP)** — © Instituto Nacional de Estadística (INE), [ine.es](https://www.ine.es/dyngs/DAB/es/index.htm?cid=1390)
+- **AEAT "Tabla de Tipos de Vías"** — © Agencia Estatal de Administración Tributaria, vía-type dictionary (`via_tipo`) — public-sector information (Ley 37/2007)
 - **CNIG CartoCiudad** (optional coordinates) — © Instituto Geográfico Nacional de España, CC BY 4.0
 
 ## License

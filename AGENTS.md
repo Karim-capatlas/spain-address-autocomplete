@@ -20,7 +20,7 @@ addresses from Spanish identity cards in-browser and normalizes them via MCP.
 - **Data:** INE Callejero (`caj_esp_*.zip`) — 749,261 streets across 52 provinces, sourced from open government data
 - **Search:** **Typesense** (HTTP/REST, local `127.0.0.1:8108` dev / Upstash-hosted in prod) for street-level fuzzy address normalization; local `cascade_es` Typesense collection for the provincia→municipio→CP dropdown cascade — both derived from the same INE snapshot
 - **Current migration:** Typesense is the default backend; **Upstash Redis Search** is retained as an explicit opt-in (`USE_UPSTASH=1`); `packages/mcp/` wraps `searchAddresses()` as `normalize_address` + `search_addresses` tools over **stdio and Streamable HTTP**
-- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, **190** tests green (17 files), 749K docs indexed & searched. **Backend default is now Typesense** (`createSearchClient()` defaults to Typesense over HTTP/REST; Upstash Redis Search is retained as an explicit opt-in via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`). Local dev uses the Homebrew Typesense server (`127.0.0.1:8108`, key `xyz`); Upstash Cloud REST is unit-tested only (no creds locally, live verification via local Typesense) · **`packages/cascade/` ✅ done & live-verified** — standalone Hono server replacing the `geoapi.es` provincia→municipio→CP router, backed by a dedicated `cascade_es` Typesense collection (HTTP/REST) built from the same INE snapshot (52 provincias, 8,106 municipios, 10,127 CPs). The cascade BFF is HTTP-addressable so it can sit behind a Cloudflare Tunnel and be called by a Worker; the Widget topology section (Phase 4) has the details.
+- **State:** Phases 0–3 ✅ done & verified · **Phase 3.5 ✅ done & live-verified** — `packages/upstash/` + `packages/mcp/` built, **211** tests green (18 files), 749K docs indexed & searched. **Backend default is now Typesense** (`createSearchClient()` defaults to Typesense over HTTP/REST; Upstash Redis Search is retained as an explicit opt-in via `USE_UPSTASH=1` + `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`). Local dev uses the Homebrew Typesense server (`127.0.0.1:8108`, key `xyz`); Upstash Cloud REST is unit-tested only (no creds locally, live verification via local Typesense) · **`packages/cascade/` ✅ done & live-verified** — standalone Hono server replacing the `geoapi.es` provincia→municipio→CP router, backed by a dedicated `cascade_es` Typesense collection (HTTP/REST) built from the same INE snapshot (52 provincias, 8,106 municipios, 10,127 CPs). The cascade BFF is HTTP-addressable so it can sit behind a Cloudflare Tunnel and be called by a Worker; the Widget topology section (Phase 4) has the details.
 
 ## Toolchain status (GREEN — do not regress)
 
@@ -30,7 +30,7 @@ Verified end-to-end on this machine:
 pnpm typecheck   # 9/9 tasks (widget has no typecheck script — Stencil type-checks inside `stencil build`)
 pnpm lint        # 8/8 tasks, 0 errors
 pnpm build       # 9/9 tasks — widget + cascade included
-pnpm test        # 190 tests pass (17 files)
+pnpm test        # 211 tests pass (18 files)
 ```
 
 - Root `vitest.config.ts` (`include: packages/**/src/**/*.{test,spec}.*`, v8, thresholds 0.8)
@@ -374,6 +374,9 @@ Search (via `searchAddresses` against the built core):
   `https://www.ine.es/dyngs/DAB/es/index.htm?cid=1390`.
 - **CNIG CartoCiudad (CC BY 4.0):** credit "© Instituto Geográfico Nacional de España"
   in any UI displaying coordinates.
+- **AEAT "Tabla de Tipos de Vías":** © Agencia Estatal de Administración
+  Tributaria. Backs the `via_tipo` dictionary (`packages/core/src/via-tipos-data.ts`);
+  public-sector information re-used under Ley 37/2007.
 
 ## Commands
 
@@ -382,7 +385,7 @@ pnpm install
 pnpm typecheck      # 9/9
 pnpm lint           # 0 errors
 pnpm build          # 9/9
-pnpm test           # 190 tests (17 files)
+pnpm test           # 211 tests (18 files)
 
 # ETL
 pnpm exec tsx packages/etl/src/index.ts run   --year 2026 --month 1 --provinces 28 \
