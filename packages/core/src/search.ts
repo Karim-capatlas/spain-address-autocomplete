@@ -14,7 +14,7 @@
 
 import type { TypesenseClient, TypesenseSearchResponse } from './typesense.js'
 import { toAddressRecord } from './record.js'
-import { normalizeSearchQuery } from './via-tipos.js'
+import { normalizeSearchQuery, normalizeViaTipo } from './via-tipos.js'
 import type { SearchCommand } from './redis.js'
 import type { Highlight, AddressRecord, SearchGroup, SearchOptions, SearchResult } from './types.js'
 
@@ -24,6 +24,16 @@ export const SEARCH_QUERY_BY = 'via_nombre,via_nombre_completo,municipio,provinc
 export const SEARCH_QUERY_BY_WEIGHTS = '5,3,1,1'
 export const SEARCH_GROUP_BY = 'municipio_id'
 export const SEARCH_GROUP_LIMIT = 3
+
+/** 2-digit INE province code (as opposed to a province name). */
+const PROVINCIA_CODE_RE = /^\d{2}$/
+/** 5-digit INE municipio code (as opposed to a municipio name). */
+const MUNICIPIO_CODE_RE = /^\d{5}$/
+
+/** Wrap a Typesense filter string value in backticks (handles spaces/parens). */
+function backtick(value: string): string {
+  return `\`${value.replace(/`/g, '\\`')}\``
+}
 
 export interface SearchDependencies {
   /** Typesense backend (widget direct mode + local fallback). */
@@ -71,13 +81,30 @@ function extractGroups(response: TypesenseSearchResponse): SearchGroup[] {
 export function buildFilter(options: SearchOptions): string | undefined {
   const terms: string[] = []
   if (options.filterByProvincia) {
-    terms.push(`provincia_id:=["${options.filterByProvincia}"]`)
+    const value = options.filterByProvincia.trim()
+    // A 2-digit INE code filters the facet id; anything else is a province name.
+    terms.push(
+      PROVINCIA_CODE_RE.test(value)
+        ? `provincia_id:=["${value}"]`
+        : `provincia:=${backtick(value)}`,
+    )
   }
   if (options.filterByMunicipio) {
-    terms.push(`municipio_id:=["${options.filterByMunicipio}"]`)
+    const value = options.filterByMunicipio.trim()
+    // A 5-digit INE code filters the facet id; anything else is a municipio name
+    // (Typesense string filters are case- and accent-insensitive).
+    terms.push(
+      MUNICIPIO_CODE_RE.test(value)
+        ? `municipio_id:=["${value}"]`
+        : `municipio:=${backtick(value)}`,
+    )
   }
   if (options.filterByCP) {
     terms.push(`codigo_postal:=["${options.filterByCP}"]`)
+  }
+  if (options.filterByViaTipo) {
+    const tipo = normalizeViaTipo(options.filterByViaTipo) ?? options.filterByViaTipo.trim()
+    terms.push(`via_tipo:=${backtick(tipo)}`)
   }
   return terms.length ? terms.join(' && ') : undefined
 }

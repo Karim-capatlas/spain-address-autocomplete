@@ -49,7 +49,7 @@ describe('searchAddresses', () => {
     expect(result.total).toBe(2)
     expect(result.records).toHaveLength(2)
     expect(result.records[0]).toMatchObject({ id: 'a', via_nombre: 'Gran Vía', municipio_id: '28079' })
-    expect(captured.params?.q).toBe('gran via')
+    expect(captured.params?.q).toBe('Gran Vía') // "gran via" resolves to the canonical type
     expect(captured.params?.query_by).toBe('via_nombre,via_nombre_completo,municipio,provincia')
     expect(captured.params?.per_page).toBe(10) // default
   })
@@ -96,6 +96,27 @@ describe('searchAddresses', () => {
     expect(
       buildFilter({ query: 'x', filterByProvincia: '28', filterByCP: '28001' }),
     ).toBe('provincia_id:=["28"] && codigo_postal:=["28001"]')
+  })
+
+  test('accepts province and municipio names, not just INE codes', () => {
+    expect(buildFilter({ query: 'x', filterByProvincia: 'Cantabria' })).toBe(
+      'provincia:=`Cantabria`',
+    )
+    expect(buildFilter({ query: 'x', filterByMunicipio: 'Torrelavega' })).toBe(
+      'municipio:=`Torrelavega`',
+    )
+    // Multi-word names are backtick-quoted so spaces survive the filter parser.
+    expect(buildFilter({ query: 'x', filterByMunicipio: 'San Sebastián de los Reyes' })).toBe(
+      'municipio:=`San Sebastián de los Reyes`',
+    )
+  })
+
+  test('canonicalizes the via_tipo filter from any abbreviation', () => {
+    expect(buildFilter({ query: 'x', filterByViaTipo: 'PLZA.' })).toBe('via_tipo:=`Plaza`')
+    expect(buildFilter({ query: 'x', filterByViaTipo: 'ctra' })).toBe(
+      'via_tipo:=`Carretera`',
+    )
+    expect(buildFilter({ query: 'x', filterByViaTipo: 'Barrio' })).toBe('via_tipo:=`Barrio`')
   })
 
   test('passes filter_by as undefined when no filters', async () => {

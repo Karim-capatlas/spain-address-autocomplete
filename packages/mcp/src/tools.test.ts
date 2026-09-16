@@ -109,6 +109,18 @@ describe('normalize_address', () => {
     expect(parsed.sin_numero).toBe(true)
     expect(parsed.numero).toBeNull()
   })
+
+  test('forwards a municipio name (not just an INE code) as filterByMunicipio', async () => {
+    let seenMunicipio = ''
+    const deps = {
+      search: async (options: { filterByMunicipio?: string }) => {
+        seenMunicipio = options.filterByMunicipio ?? ''
+        return { records: [hit], groups: [], total: 1, took_ms: 1 }
+      },
+    } as never
+    await normalizeAddress({ text: 'Plaza de las Autonomias 13', municipio_id: 'Torrelavega' }, deps)
+    expect(seenMunicipio).toBe('Torrelavega')
+  })
 })
 
 describe('search_addresses', () => {
@@ -161,6 +173,24 @@ describe('search_addresses', () => {
     expect(seenCp).toBe('28013')
   })
 
+  test('forwards via_tipo and a municipio name to the search filters', async () => {
+    let seenTipo = ''
+    let seenMunicipio = ''
+    const deps = {
+      search: async (options: { filterByViaTipo?: string; filterByMunicipio?: string }) => {
+        seenTipo = options.filterByViaTipo ?? ''
+        seenMunicipio = options.filterByMunicipio ?? ''
+        return { records: [hit], groups: [], total: 1, took_ms: 1 }
+      },
+    } as never
+    await searchAddressesTool(
+      { query: 'Autonomias', via_tipo: 'PLZA.', municipio_id: 'Torrelavega' },
+      deps,
+    )
+    expect(seenTipo).toBe('PLZA.')
+    expect(seenMunicipio).toBe('Torrelavega')
+  })
+
   test('falls back to the raw query when the cleaned street line has no hits', async () => {
     const seen: string[] = []
     const deps = {
@@ -210,5 +240,7 @@ describe('dispatchTool', () => {
     for (const tool of TOOLS) {
       expect(tool.inputSchema.required.length).toBeGreaterThan(0)
     }
+    const searchTool = TOOLS.find((t) => t.name === 'search_addresses')
+    expect(Object.keys(searchTool?.inputSchema.properties ?? {})).toContain('via_tipo')
   })
 })

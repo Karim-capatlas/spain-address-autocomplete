@@ -16,7 +16,7 @@
 
 import type { AddressRecord, SearchGroup, SearchResult } from './types.js'
 import { toAddressRecord } from './record.js'
-import { normalizeSearchQuery } from './via-tipos.js'
+import { normalizeSearchQuery, normalizeViaTipo } from './via-tipos.js'
 
 export const UPSTASH_INDEX = 'callejero_es'
 export const DEFAULT_PER_PAGE = 10
@@ -155,12 +155,20 @@ export type SearchCommand = (args: string[]) => Promise<unknown>
 export interface UpstashSearchOptions {
   query: string
   perPage?: number
+  /** 2-digit INE province code (a province name is folded into the query terms). */
   filterByProvincia?: string
+  /** 5-digit INE municipio code (a municipio name is folded into the query terms). */
   filterByMunicipio?: string
   filterByCP?: string
+  /** Vía-type filter: canonical type or any abbreviation/synonym (`"Plaza"`, `"PLZA."`). */
+  filterByViaTipo?: string
   /** Max streets returned per municipio group. */
   groupLimit?: number
 }
+
+/** 2-digit INE province code / 5-digit INE municipio code. */
+const PROVINCIA_CODE_RE = /^\d{2}$/
+const MUNICIPIO_CODE_RE = /^\d{5}$/
 
 export interface UpstashSearchDeps {
   command: SearchCommand
@@ -175,9 +183,19 @@ function escapeTerm(term: string): string {
 /** Compose the TAG filter clause from the structured options. */
 export function buildFilterClause(options: UpstashSearchOptions): string | undefined {
   const terms: string[] = []
-  if (options.filterByProvincia) terms.push(`@provincia_id:{${options.filterByProvincia}}`)
-  if (options.filterByMunicipio) terms.push(`@municipio_id:{${options.filterByMunicipio}}`)
+  // TAG filters only accept exact id values; a name is folded into the query
+  // terms by `buildSearchArgs` (the `municipio`/`provincia` fields are TEXT).
+  if (options.filterByProvincia && PROVINCIA_CODE_RE.test(options.filterByProvincia.trim())) {
+    terms.push(`@provincia_id:{${options.filterByProvincia}}`)
+  }
+  if (options.filterByMunicipio && MUNICIPIO_CODE_RE.test(options.filterByMunicipio.trim())) {
+    terms.push(`@municipio_id:{${options.filterByMunicipio}}`)
+  }
   if (options.filterByCP) terms.push(`@codigo_postal:{${options.filterByCP}}`)
+  if (options.filterByViaTipo) {
+    const tipo = normalizeViaTipo(options.filterByViaTipo) ?? options.filterByViaTipo.trim()
+    terms.push(`@via_tipo:{${escapeTerm(tipo)}}`)
+  }
   return terms.length ? terms.join(' ') : undefined
 }
 
@@ -190,6 +208,15 @@ export function buildFilterClause(options: UpstashSearchOptions): string | undef
  */
 export function buildSearchArgs(options: UpstashSearchOptions, index = UPSTASH_INDEX): string[] {
   const words = options.query.trim().split(/\s+/).filter(Boolean)
+  // A province/municipio *name* can't be a TAG filter (those fields are TEXT on
+  // Upstash) — fold it into the fuzzy query terms instead, so it still boosts
+  // and filters via text match.
+  for (const [value, codeRe] of [
+    [options.filterByProvincia, PROVINCIA_CODE_RE],
+    [options.filterByMunicipio, MUNICIPIO_CODE_RE],
+  ] as const) {
+    if (value && !codeRe.test(value.trim())) words.push(...value.trim().split(/\s+/))
+  }
   const fuzzyQuery = words.map((w) => `%${escapeTerm(w)}%`).join(' ')
   const filter = buildFilterClause(options)
   const fullQuery = filter ? `${filter} ${fuzzyQuery}` : fuzzyQuery

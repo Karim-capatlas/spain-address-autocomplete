@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { parseDomicilio } from './domicilio.js'
+import { normalizeDomicilio, parseDomicilio } from './domicilio.js'
 import type { DomicilioUnit } from './types.js'
 
 function empty(): DomicilioUnit {
@@ -158,5 +158,41 @@ describe('parseDomicilio — heuristic flag', () => {
 
   test('positional number is heuristic', () => {
     expect(parse('calle mayor 12').heuristic).toBe(true)
+  })
+})
+
+describe('normalizeDomicilio — location hints', () => {
+  const record = {
+    id: 'x1',
+    via_nombre: 'Autonomias (las)',
+    via_tipo: 'Calle',
+    via_nombre_completo: 'Calle Autonomias (las)',
+    municipio: 'Torrelavega',
+    municipio_id: '39087',
+    provincia: 'Cantabria',
+    provincia_id: '39',
+    comunidad_autonoma: 'Cantabria',
+    comunidad_autonoma_id: '06',
+    codigo_postal: '39300',
+    label: 'Calle Autonomias (las), Torrelavega (39300)',
+  }
+
+  test('forwards province, municipio and via_tipo hints to the search', async () => {
+    let seen: Record<string, unknown> = {}
+    const deps = {
+      search: async (options: Record<string, unknown>) => {
+        seen = options
+        return { records: [record], groups: [], total: 1, took_ms: 1 }
+      },
+    }
+    const result = await normalizeDomicilio(
+      'PLZA. DE LAS AUTONOMIAS 13 P05 C TORRELAVEGA, CANTABRIA',
+      deps as never,
+      { filterByProvincia: 'Cantabria', filterByMunicipio: 'Torrelavega', filterByViaTipo: 'PLZA.' },
+    )
+    expect(seen.filterByProvincia).toBe('Cantabria')
+    expect(seen.filterByMunicipio).toBe('Torrelavega')
+    expect(seen.filterByViaTipo).toBe('PLZA.')
+    expect(result?.municipio_id).toBe('39087')
   })
 })

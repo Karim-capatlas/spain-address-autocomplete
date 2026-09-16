@@ -437,6 +437,16 @@ export interface NormalizeDomicilioDeps extends SearchDependencies {
   search?: typeof searchAddresses
 }
 
+/** Location hints known up-front (e.g. from the OCR of a DNI/TIE card). */
+export interface NormalizeDomicilioOptions {
+  /** 2-digit INE code or province name. */
+  filterByProvincia?: string
+  /** 5-digit INE code or municipio name. */
+  filterByMunicipio?: string
+  /** Vía-type filter: canonical type or any abbreviation/synonym. */
+  filterByViaTipo?: string
+}
+
 /**
  * Compose `parseDomicilio` → `searchAddresses` → merge the top hit with the
  * parsed unit into a `DireccionNormalizada`. Returns `null` when the query
@@ -445,7 +455,7 @@ export interface NormalizeDomicilioDeps extends SearchDependencies {
 export async function normalizeDomicilio(
   text: string,
   deps: NormalizeDomicilioDeps = {},
-  opts?: { filterByProvincia?: string },
+  opts?: NormalizeDomicilioOptions,
 ): Promise<DireccionNormalizada | null> {
   const { query: rawQuery, unidad, heuristic } = parseDomicilio(text)
   const { query, cp } = extractCp(rawQuery)
@@ -456,6 +466,8 @@ export async function normalizeDomicilio(
     perPage: 5,
     filterByCP: cp,
     filterByProvincia: opts?.filterByProvincia,
+    filterByMunicipio: opts?.filterByMunicipio,
+    filterByViaTipo: opts?.filterByViaTipo,
   }
   const run = deps.search ?? searchAddresses
   const result = await run(options, deps)

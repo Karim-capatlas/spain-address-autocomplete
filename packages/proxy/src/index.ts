@@ -61,6 +61,7 @@ export function createApp(deps: ProxyDependencies): Hono {
       filterByCP,
       filterByProvincia: c.req.query('provincia') || undefined,
       filterByMunicipio: c.req.query('municipio') || undefined,
+      filterByViaTipo: c.req.query('via_tipo') || undefined,
       highlight: true,
     }
 
@@ -83,8 +84,12 @@ export function createApp(deps: ProxyDependencies): Hono {
     if (q.length > MAX_QUERY_LENGTH) return c.json({ error: 'query too long' }, 400)
 
     const provincia = (c.req.query('provincia') ?? '').trim() || undefined
+    const municipio = (c.req.query('municipio') ?? '').trim() || undefined
     try {
-      const normalized = await normalizeDomicilio(q, deps, { filterByProvincia: provincia })
+      const normalized = await normalizeDomicilio(q, deps, {
+        filterByProvincia: provincia,
+        filterByMunicipio: municipio,
+      })
       if (!normalized) return c.json({ error: 'no_match', query: q }, 404)
       return c.json(normalized)
     } catch (e: unknown) {

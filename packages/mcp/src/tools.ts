@@ -50,7 +50,13 @@ export const NORMALIZE_ADDRESS_TOOL = {
       },
       provincia_id: {
         type: 'string',
-        description: 'Optional 2-digit INE province code to narrow the search (e.g. "28" = Madrid)',
+        description:
+          'Optional province filter to narrow the search: a 2-digit INE code ("28" = Madrid) or a province name ("Madrid" / "Cantabria")',
+      },
+      municipio_id: {
+        type: 'string',
+        description:
+          'Optional municipio filter: a 5-digit INE code ("39087" = Torrelavega) or a municipio name ("Torrelavega")',
       },
     },
     required: ['text'],
@@ -66,9 +72,21 @@ export const SEARCH_ADDRESSES_TOOL = {
     properties: {
       query: { type: 'string', description: 'Address search text' },
       per_page: { type: 'number', description: 'Max results (default 10)' },
-      provincia_id: { type: 'string', description: 'Filter by INE province code' },
-      municipio_id: { type: 'string', description: 'Filter by 5-digit INE municipality code' },
+      provincia_id: {
+        type: 'string',
+        description: 'Province filter: 2-digit INE code ("28") or province name ("Cantabria")',
+      },
+      municipio_id: {
+        type: 'string',
+        description:
+          'Municipio filter: 5-digit INE code ("39087") or municipio name ("Torrelavega")',
+      },
       codigo_postal: { type: 'string', description: 'Filter by 5-digit postal code' },
+      via_tipo: {
+        type: 'string',
+        description:
+          'Vía-type filter: canonical type or any abbreviation/synonym ("Plaza", "PLZA.", "Calle", "Barrio")',
+      },
     },
     required: ['query'],
   },
@@ -104,14 +122,14 @@ function jsonContent(value: unknown): ToolResult {
  * domicilio" (`DireccionNormalizada`).
  */
 export async function normalizeAddress(
-  args: { text: string; provincia_id?: string },
+  args: { text: string; provincia_id?: string; municipio_id?: string },
   deps: ToolDeps,
 ): Promise<ToolResult> {
   const search = deps.search ?? searchAddresses
   const normalized = await normalizeDomicilio(
     args.text,
     { ...deps, search },
-    { filterByProvincia: args.provincia_id },
+    { filterByProvincia: args.provincia_id, filterByMunicipio: args.municipio_id },
   )
   if (!normalized) {
     const { query, unidad } = parseDomicilio(args.text)
@@ -133,6 +151,7 @@ export async function searchAddressesTool(
     provincia_id?: string
     municipio_id?: string
     codigo_postal?: string
+    via_tipo?: string
   },
   deps: ToolDeps,
 ): Promise<ToolResult> {
@@ -150,6 +169,7 @@ export async function searchAddressesTool(
         filterByProvincia: args.provincia_id,
         filterByMunicipio: args.municipio_id,
         filterByCP: codigoPostal,
+        filterByViaTipo: args.via_tipo,
       },
       backendDeps(deps),
     )
@@ -191,6 +211,7 @@ export async function dispatchTool(
         {
           text: String(args.text ?? ''),
           ...(args.provincia_id != null && { provincia_id: String(args.provincia_id) }),
+          ...(args.municipio_id != null && { municipio_id: String(args.municipio_id) }),
         },
         deps,
       )
@@ -202,6 +223,7 @@ export async function dispatchTool(
           ...(args.provincia_id != null && { provincia_id: String(args.provincia_id) }),
           ...(args.municipio_id != null && { municipio_id: String(args.municipio_id) }),
           ...(args.codigo_postal != null && { codigo_postal: String(args.codigo_postal) }),
+          ...(args.via_tipo != null && { via_tipo: String(args.via_tipo) }),
         },
         deps,
       )

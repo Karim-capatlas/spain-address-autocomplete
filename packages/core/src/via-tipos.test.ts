@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { normalizeSearchQuery, VIA_TIPO_ABBREVIATIONS } from './via-tipos.js'
+import { normalizeSearchQuery, normalizeViaTipo, VIA_TIPO_ABBREVIATIONS } from './via-tipos.js'
 
 describe('normalizeSearchQuery', () => {
   test('expands a space-separated abbreviated type (c/ Villanubla)', () => {
@@ -55,5 +55,56 @@ describe('normalizeSearchQuery', () => {
     expect(VIA_TIPO_ABBREVIATIONS.c).toBe('Calle')
     expect(VIA_TIPO_ABBREVIATIONS.ctra).toBe('Carretera')
     expect(VIA_TIPO_ABBREVIATIONS.avda).toBe('Avenida')
+  })
+})
+
+describe('normalizeSearchQuery — AEAT table coverage', () => {
+  test('expands multilingual / extra abbreviations to their Castilian canonical', () => {
+    expect(normalizeSearchQuery('AVDA. Mayor')).toBe('Avenida Mayor')
+    expect(normalizeSearchQuery('BARRO Nuevo')).toBe('Barrio Nuevo')
+    expect(normalizeSearchQuery('CARRER Major')).toBe('Calle Major')
+    expect(normalizeSearchQuery('KALE Nagusia')).toBe('Calle Nagusia')
+    expect(normalizeSearchQuery('EPTZA Nagusia')).toBe('Plaza Nagusia')
+  })
+
+  test('tolerates common OCR / typing variants', () => {
+    expect(normalizeSearchQuery('carretra de Madrid')).toBe('Carretera de Madrid')
+    expect(normalizeSearchQuery('CARRETRA Madrid')).toBe('Carretera Madrid')
+    expect(normalizeSearchQuery('plza de las Autonomias')).toBe('Plaza de las Autonomias')
+    expect(normalizeSearchQuery('plz. Mayor')).toBe('Plaza Mayor')
+    expect(normalizeSearchQuery('avnda Mayor')).toBe('Avenida Mayor')
+    expect(normalizeSearchQuery('baro Nuevo')).toBe('Barrio Nuevo')
+    expect(normalizeSearchQuery('camnio viejo')).toBe('Camino viejo')
+  })
+
+  test('matches multi-word types (longest leading phrase wins)', () => {
+    expect(normalizeSearchQuery('gran via 5')).toBe('Gran Vía 5')
+    expect(normalizeSearchQuery('G.V. 5')).toBe('Gran Vía 5')
+    expect(normalizeSearchQuery('paseo maritimo 3')).toBe('Paseo Marítimo 3')
+    expect(normalizeSearchQuery('PSMAR. 3')).toBe('Paseo Marítimo 3')
+  })
+
+  test('does not rewrite plain street names', () => {
+    expect(normalizeSearchQuery('Villanubla')).toBe('Villanubla')
+    expect(normalizeSearchQuery('Autonomias Torrelavega')).toBe('Autonomias Torrelavega')
+    expect(normalizeSearchQuery('Acebeda')).toBe('Acebeda')
+  })
+})
+
+describe('normalizeViaTipo', () => {
+  test('resolves abbreviations, synonyms and canonical labels', () => {
+    expect(normalizeViaTipo('PLZA.')).toBe('Plaza')
+    expect(normalizeViaTipo('plza')).toBe('Plaza')
+    expect(normalizeViaTipo('CARRETRA')).toBe('Carretera')
+    expect(normalizeViaTipo('baro')).toBe('Barrio')
+    expect(normalizeViaTipo('ctra')).toBe('Carretera')
+    expect(normalizeViaTipo('Avenida')).toBe('Avenida')
+    expect(normalizeViaTipo('AVDA')).toBe('Avenida')
+    expect(normalizeViaTipo('Paseo Marítimo')).toBe('Paseo Marítimo')
+  })
+
+  test('returns undefined for non-types', () => {
+    expect(normalizeViaTipo('Autonomias')).toBeUndefined()
+    expect(normalizeViaTipo('')).toBeUndefined()
   })
 })

@@ -69,6 +69,17 @@ have >250 municipios).
 - Typesense path (`client`): `query_by` weights `5,3,1,1`, `infix` on street names, `facet` on municipio_id/provincia_id/codigo_postal, `group_by=municipio_id`/`group_limit=3`, `highlight`.
 - Upstash path (`command`): `%term%` fuzzy operator (Levenshtein 1), `TAG` facets on municipio_id/provincia_id/codigo_postal, client-side grouping.
 
+**Location filters accept names or INE codes (`buildFilter`):**
+- `filterByProvincia`: 2-digit code → `provincia_id:=`, otherwise a province *name* → `provincia:=` (backtick-quoted).
+- `filterByMunicipio`: 5-digit code → `municipio_id:=`, otherwise a municipio *name* → `municipio:=`. Typesense string filters are case- and accent-insensitive, so `"TORRELAVEGA"` matches `Torrelavega` — this is what makes a DNI address like `PLZA. DE LAS AUTONOMIAS 13 P05 C TORRELAVEGA, CANTABRIA` resolve once the OCR supplies the municipio (strict provincia-only text search still loses to common `Plaza de las…` streets).
+- `filterByViaTipo`: canonicalized via `normalizeViaTipo` (see below) → `via_tipo:=`. Weights/precision note: `via_tipo` is a **hard** filter — do not pass the OCR's possibly-wrong type if it must still match (`Plaza` vs the index's `Calle Autonomias (las)`).
+- The Upstash path has no TAG for province/municipio *names*; `buildSearchArgs` folds those names into the fuzzy query terms instead.
+
+**Vía-type dictionary (`packages/core/src/via-tipos.ts` + `via-tipos-data.ts`):**
+- Generated from the **AEAT "Tabla de Tipos de Vías"** (333 rows / 204 codes / multilingual synonyms). Each code collapses to its Castilian/INE-canonical label, then curated overrides (`CODE_CANONICAL_OVERRIDES`) and everyday abbreviations/OCR typos (`EXTRA_VIA_TIPO_ALIASES`) are applied.
+- `normalizeSearchQuery` rewrites the longest leading type phrase (up to 4 words) to canonical (`c/ X`→`Calle X`, `PLZA.`→`Plaza`, `gran via`→`Gran Vía`, `PSMAR.`→`Paseo Marítimo`); `normalizeViaTipo` resolves a single abbreviation/name for filters (`PLZA.`→`Plaza`, `BARRO`→`Barrio`, `carretra`→`Carretera`).
+- Do **not** re-add a hand-rolled 90-entry map — regenerate from the AEAT table instead.
+
 **`MCP server (`packages/mcp/`):**
 - **Two transports, one tool source** — official `@modelcontextprotocol/sdk`
   low-level `Server` (`src/server.ts`) reusing `TOOLS` + `dispatchTool`:

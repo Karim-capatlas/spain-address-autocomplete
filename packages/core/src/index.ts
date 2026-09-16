@@ -26,10 +26,12 @@ export {
 export type {
   ParseDomicilioResult,
   NormalizeDomicilioDeps,
+  NormalizeDomicilioOptions,
 } from './domicilio.js'
 
 export {
   normalizeSearchQuery,
+  normalizeViaTipo,
   VIA_TIPO_ABBREVIATIONS,
 } from './via-tipos.js'
 

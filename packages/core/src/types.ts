@@ -82,9 +82,13 @@ export interface DireccionNormalizada extends AddressRecord {
 export interface SearchOptions {
   query: string
   perPage?: number
+  /** Province filter: a 2-digit INE code (`"28"`) or a province name (`"Cantabria"`). */
   filterByProvincia?: string
+  /** Municipio filter: a 5-digit INE code (`"39087"`) or a municipio name (`"Torrelavega"`). */
   filterByMunicipio?: string
   filterByCP?: string
+  /** Vía-type filter: a canonical type or any abbreviation/synonym (`"Plaza"`, `"PLZA."`). */
+  filterByViaTipo?: string
   /** Max streets returned per municipio group (forwarded to Typesense `group_limit`). */
   groupLimit?: number
   /** Request Typesense highlights (`highlight:true` + `highlight_full:true`) so

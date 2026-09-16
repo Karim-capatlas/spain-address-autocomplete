@@ -37,7 +37,7 @@ describe('GET /api/address-search', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(fakeResult)
     const params = (client.search as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as Record<string, unknown>
-    expect(params.q).toBe('gran vía')
+    expect(params.q).toBe('Gran Vía') // "gran vía" resolves to the canonical type
     expect(params.per_page).toBe(5)
     expect(params.group_limit).toBe(2)
     expect(params.highlight).toBe(true)
